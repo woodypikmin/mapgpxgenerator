@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPX Studio - 地圖手繪轉座標</title>
+    <title>GPX Studio - 地圖路徑繪製器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -11,59 +11,72 @@
     <style>
         body { background-color: #f8fafc; }
         .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        #map { height: 500px; width: 100%; border-radius: 12px; cursor: crosshair; }
+        #map { height: 600px; width: 100%; border-radius: 12px; transition: all 0.3s; z-index: 1; }
+        .mode-active { border: 2px solid #6366f1; box-shadow: 0 0 15px rgba(99, 102, 241, 0.3); }
+        .cursor-draw { cursor: crosshair !important; }
     </style>
 </head>
 <body class="min-h-screen pb-12">
 
-    <div class="gradient-bg text-white py-8 px-4 shadow-lg mb-8">
-        <div class="max-w-6xl mx-auto">
-            <h1 class="text-3xl font-bold flex items-center gap-3">
-                <i class="fas fa-edit"></i> GPX 手繪畫板
-            </h1>
-            <p class="mt-2 opacity-80 text-sm">在地圖上畫出「風火輪」或任何形狀，自動轉換為 GPX 座標</p>
+    <div class="gradient-bg text-white py-6 px-4 shadow-lg mb-6">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-3">
+                    <i class="fas fa-map-marked-alt"></i> GPX Studio
+                </h1>
+                <p class="mt-1 opacity-80 text-xs">在地圖上繪製自定義路徑並導出 GPX 檔案</p>
+            </div>
+            <div id="statusBadge" class="bg-white/20 px-4 py-1 rounded-full text-xs font-bold border border-white/30">
+                模式：瀏覽地圖
+            </div>
         </div>
     </div>
 
-    <main class="max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <main class="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        <div class="lg:col-span-2 space-y-4">
-            <div class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
+        <div class="lg:col-span-3 space-y-4">
+            <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex gap-3">
+                <button id="moveBtn" onclick="setMode('move')" class="flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-bold transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-arrows-alt"></i> 1. 移動地圖
+                </button>
+                <button id="drawBtn" onclick="setMode('draw')" class="flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold transition-all hover:bg-gray-200 flex items-center justify-center gap-2">
+                    <i class="fas fa-pen"></i> 2. 繪製路徑
+                </button>
+                <button onclick="clearMap()" class="px-4 py-2.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors">
+                    <i class="fas fa-eraser"></i> 清除
+                </button>
+            </div>
+
+            <div id="mapContainer" class="bg-white rounded-xl shadow-md p-2 border border-gray-100">
                 <div id="map"></div>
-                <p class="text-xs text-gray-500 mt-2 italic">* 按住滑鼠左鍵不放即可在地圖上繪製路徑</p>
             </div>
         </div>
 
         <div class="space-y-6">
             <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-                <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                    <i class="fas fa-terminal text-indigo-500"></i> 擷取的座標
+                <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2 border-b pb-2">
+                    <i class="fas fa-list-ul text-indigo-500"></i> 座標列表
                 </h3>
                 
                 <textarea id="inputData" 
-                    class="w-full h-64 p-3 border border-gray-200 rounded-lg outline-none font-mono text-xs bg-gray-50 mb-4"
-                    placeholder="地圖繪製後此處會自動產生座標..."></textarea>
+                    class="w-full h-80 p-3 border border-gray-200 rounded-lg outline-none font-mono text-[10px] bg-gray-50 mb-4"
+                    readonly placeholder="點擊「繪製路徑」按鈕後，在此繪製座標..."></textarea>
 
                 <div class="space-y-4">
-                    <button onclick="clearMap()" class="w-full py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-50 transition-colors">
-                        <i class="fas fa-trash-alt"></i> 清除重畫
-                    </button>
-                    
-                    <hr>
-                    
-                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">輸出設定</p>
-                    <label class="flex items-center p-3 border border-gray-100 rounded-lg cursor-pointer hover:bg-indigo-50">
-                        <input type="radio" name="format" value="trk" checked>
-                        <span class="ml-3 text-sm font-bold text-gray-700 text-sm">🛰️ 一般軌跡 (trk)</span>
-                    </label>
-                    <label class="flex items-center p-3 border border-gray-100 rounded-lg cursor-pointer hover:bg-indigo-50">
-                        <input type="radio" name="format" value="wpt">
-                        <span class="ml-3 text-sm font-bold text-gray-700 text-sm">🚩 飛妹專用 (wpt)</span>
-                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center justify-center p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-indigo-50 transition-all has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500">
+                            <input type="radio" name="format" value="trk" checked class="hidden">
+                            <span class="text-xs font-bold text-gray-600">軌跡 (trk)</span>
+                        </label>
+                        <label class="flex items-center justify-center p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-indigo-50 transition-all has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500">
+                            <input type="radio" name="format" value="wpt" class="hidden">
+                            <span class="text-xs font-bold text-gray-600">航點 (wpt)</span>
+                        </label>
+                    </div>
 
                     <button onclick="generateGPX()" 
-                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all flex items-center justify-center gap-2">
-                        <i class="fas fa-download"></i> 匯出 GPX
+                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2">
+                        <i class="fas fa-download"></i> 導出 GPX 檔案
                     </button>
                 </div>
             </div>
@@ -71,73 +84,92 @@
     </main>
 
     <script>
-        // 初始化地圖 (預設在台北，你可以手動移到任何地方)
-        var map = L.map('map').setView([25.0336, 121.5648], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        // 初始化地圖
+        var map = L.map('map').setView([25.0336, 121.5648], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
 
         var pathArray = [];
-        var polyline = L.polyline([], {color: '#4f46e5', weight: 5}).addTo(map);
+        var polyline = L.polyline([], {color: '#6366f1', weight: 4, opacity: 0.8}).addTo(map);
         var isDrawing = false;
+        var currentMode = 'move'; // move or draw
 
-        // 監聽繪圖事件
+        function setMode(mode) {
+            currentMode = mode;
+            const statusBadge = document.getElementById('statusBadge');
+            const moveBtn = document.getElementById('moveBtn');
+            const drawBtn = document.getElementById('drawBtn');
+            const mapEl = document.getElementById('map');
+
+            if (mode === 'draw') {
+                statusBadge.innerText = "模式：路徑繪製中";
+                statusBadge.classList.replace('bg-white/20', 'bg-red-500');
+                drawBtn.className = "flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-bold transition-all shadow-md";
+                moveBtn.className = "flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold transition-all hover:bg-gray-200";
+                map.dragging.disable();
+                mapEl.classList.add('cursor-draw');
+            } else {
+                statusBadge.innerText = "模式：瀏覽地圖";
+                statusBadge.classList.replace('bg-red-500', 'bg-white/20');
+                moveBtn.className = "flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-bold transition-all shadow-md";
+                drawBtn.className = "flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold transition-all hover:bg-gray-200";
+                map.dragging.enable();
+                mapEl.classList.remove('cursor-draw');
+            }
+        }
+
         map.on('mousedown', function() {
-            isDrawing = true;
-            map.dragging.disable(); // 畫圖時禁用拖動地圖
+            if (currentMode === 'draw') isDrawing = true;
         });
 
         map.on('mousemove', function(e) {
-            if (isDrawing) {
+            if (isDrawing && currentMode === 'draw') {
                 const lat = e.latlng.lat.toFixed(6);
                 const lng = e.latlng.lng.toFixed(6);
-                
-                // 增加點位
                 pathArray.push([lat, lng]);
                 polyline.addLatLng(e.latlng);
-                
-                // 即時更新文字框
                 document.getElementById('inputData').value = pathArray.map(p => p.join(', ')).join('\n');
             }
         });
 
         window.addEventListener('mouseup', function() {
             isDrawing = false;
-            map.dragging.enable();
         });
 
         function clearMap() {
-            pathArray = [];
-            polyline.setLatLngs([]);
-            document.getElementById('inputData').value = '';
+            if(confirm("確定要清除所有繪製的路徑嗎？")) {
+                pathArray = [];
+                polyline.setLatLngs([]);
+                document.getElementById('inputData').value = '';
+            }
         }
 
         function generateGPX() {
-            const rawData = document.getElementById('inputData').value.trim();
-            if (!rawData) return alert("請先在地圖上繪製形狀！");
-
-            let lines = rawData.split('\n').map(line => line.split(', '));
+            if (pathArray.length === 0) return alert("地圖上沒有路徑數據！");
+            
             const format = document.querySelector('input[name="format"]:checked').value;
             const now = new Date().toISOString();
-            
-            let gpxContent = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+            let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
             if (format === 'wpt') {
-                lines.forEach((p, i) => {
-                    gpxContent += `\t<wpt lat="${p[0]}" lon="${p[1]}"><time>${now}</time><name>PT-${i+1}</name></wpt>\n`;
+                pathArray.forEach((p, i) => {
+                    gpx += `  <wpt lat="${p[0]}" lon="${p[1]}"><time>${now}</time><name>PT-${i+1}</name></wpt>\n`;
                 });
             } else {
-                gpxContent += `\t<trk><name>Drawing</name><trkseg>\n`;
-                lines.forEach(p => {
-                    gpxContent += `\t\t\t<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>\n`;
+                gpx += `  <trk><name>Manual_Path</name><trkseg>\n`;
+                pathArray.forEach(p => {
+                    gpx += `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>\n`;
                 });
-                gpxContent += `\t\t</trkseg></trk>\n`;
+                gpx += `  </trkseg></trk>\n`;
             }
-            gpxContent += `</gpx>`;
+            gpx += `</gpx>`;
 
-            const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+            const blob = new Blob([gpx], { type: 'application/gpx+xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Drawing_${new Date().getTime()}.gpx`;
+            a.download = `Path_${new Date().getTime()}.gpx`;
             a.click();
         }
     </script>
