@@ -35,6 +35,23 @@
     <main class="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         <div class="lg:col-span-3 space-y-4">
+            
+            {/* ★ 新增：座標搜尋功能列 */}
+            <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex gap-3 items-center">
+                <div class="relative flex-1">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                    <input type="text" id="coordInput" 
+                        class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono" 
+                        placeholder="輸入座標 (例: 24.729, 121.766) 按 Enter 跳轉"
+                        onkeypress="handleSearchEnter(event)">
+                </div>
+                <button onclick="searchCoordinate()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center gap-2">
+                    <i class="fas fa-location-arrow"></i> 尋找
+                </button>
+            </div>
+
             <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex gap-3 items-center">
                 <button id="moveBtn" onclick="setMode('move')" class="flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-bold shadow-md transition-all">
                     <i class="fas fa-arrows-alt"></i> 1. 移動地圖
@@ -51,7 +68,7 @@
                 </button>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-2 border border-gray-100">
+            <div class="bg-white rounded-xl shadow-md p-2 border border-gray-100 relative">
                 <div id="map"></div>
             </div>
         </div>
@@ -65,7 +82,7 @@
                     <span id="strokeCounter" class="text-xs font-bold text-indigo-600">0 筆</span>
                 </div>
                 
-                <div id="strokeList" class="space-y-2 h-[420px] overflow-y-auto mb-6">
+                <div id="strokeList" class="space-y-2 h-[420px] overflow-y-auto mb-6 pr-2">
                     <p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>
                 </div>
 
@@ -86,7 +103,7 @@
     <script>
         var map = L.map('map').setView([25.0336, 121.5648], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        L.control.scale({ imperial: false, metric: true }).addTo(map); // 加入比例尺
+        L.control.scale({ imperial: false, metric: true }).addTo(map);
 
         var allStrokes = []; // [{points: [], distance: 0}, ...]
         var currentStrokePoints = [];
@@ -94,6 +111,7 @@
         var mapPolylines = [];
         var isDrawing = false;
         var mode = 'move';
+        var searchMarker = null; // ★ 記錄搜尋產生的標記釘
 
         function setMode(newMode) {
             mode = newMode;
@@ -107,6 +125,52 @@
                 document.getElementById('map').classList.remove('cursor-draw');
                 document.getElementById('moveBtn').className = "flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-bold shadow-md";
                 document.getElementById('drawBtn').className = "flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold hover:bg-gray-200";
+            }
+        }
+
+        // ★ 新增：處理搜尋輸入框的 Enter 鍵
+        function handleSearchEnter(e) {
+            if (e.key === 'Enter') {
+                searchCoordinate();
+            }
+        }
+
+        // ★ 新增：解析輸入座標並移動地圖
+        function searchCoordinate() {
+            const input = document.getElementById('coordInput').value.trim();
+            if (!input) return;
+
+            // 支援的格式：
+            // 24.729, 121.766
+            // 24.729,121.766
+            // 24.729; 121.766
+            // (24.729, 121.766)
+            // [24.729, 121.766]
+            const coordsRegex = /^[\(\[]?\s*(-?\d+(\.\d+)?)\s*[,;]\s*(-?\d+(\.\d+)?)\s*[\)\]]?$/;
+            const match = input.match(coordsRegex);
+
+            if (match) {
+                const lat = parseFloat(match[1]);
+                const lng = parseFloat(match[3]);
+
+                // 移除舊的標記釘
+                if (searchMarker) {
+                    map.removeLayer(searchMarker);
+                }
+
+                // 飛到新座標 (18 是縮放大小)
+                map.flyTo([lat, lng], 18, {
+                    duration: 1.5 // 飛行動畫時間 (秒)
+                });
+
+                // 放上標記釘
+                searchMarker = L.marker([lat, lng]).addTo(map)
+                    .bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
+
+                // 切換回移動模式，方便使用者拖拉
+                setMode('move');
+            } else {
+                alert("座標格式無法辨識！\n支援的格式例如：\n24.7295, 121.7664\n(24.7295, 121.7664)");
             }
         }
 
@@ -139,7 +203,6 @@
             }
         });
 
-        // 計算經緯度陣列的距離 (單位: 公尺)
         function calculateDistance(points) {
             let total = 0;
             for (let i = 0; i < points.length - 1; i++) {
@@ -165,12 +228,12 @@
             allStrokes.forEach((stroke, i) => {
                 total += stroke.distance;
                 list.innerHTML += `
-                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 shadow-sm">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                         <div>
                             <div class="text-[10px] font-bold text-indigo-500 uppercase">Stroke ${i+1}</div>
                             <div class="text-sm font-mono font-bold text-gray-700">${formatDist(stroke.distance)}</div>
                         </div>
-                        <i class="fas fa-check-circle text-green-400"></i>
+                        <i class="fas fa-check-circle text-emerald-400"></i>
                     </div>
                 `;
             });
@@ -178,6 +241,9 @@
             totalDisplay.innerText = formatDist(total);
             counter.innerText = `${allStrokes.length} 筆`;
             if(allStrokes.length === 0) list.innerHTML = '<p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>';
+            
+            // 自動捲動到最底下
+            list.scrollTop = list.scrollHeight;
         }
 
         function undoLastStroke() {
@@ -188,10 +254,15 @@
         }
 
         function clearAll() {
-            if (!confirm("確定清空？")) return;
+            if (!confirm("確定清空所有筆劃？")) return;
             allStrokes = [];
             mapPolylines.forEach(p => map.removeLayer(p));
             mapPolylines = [];
+            // ★ 如果有搜尋的標記釘，也一併清掉
+            if (searchMarker) {
+                map.removeLayer(searchMarker);
+                searchMarker = null;
+            }
             updateUI();
         }
 
