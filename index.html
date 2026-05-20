@@ -36,7 +36,6 @@
         
         <div class="lg:col-span-3 space-y-4">
             
-            {/* ★ 新增：座標搜尋功能列 */}
             <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex gap-3 items-center">
                 <div class="relative flex-1">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -101,6 +100,9 @@
     </main>
 
     <script>
+        // ★ 設定取樣間距：移動超過幾公尺才記錄一個點 (數字越大，記錄的點越少)
+        const MIN_DISTANCE_METERS = 50;
+
         var map = L.map('map').setView([25.0336, 121.5648], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         L.control.scale({ imperial: false, metric: true }).addTo(map);
@@ -111,7 +113,7 @@
         var mapPolylines = [];
         var isDrawing = false;
         var mode = 'move';
-        var searchMarker = null; // ★ 記錄搜尋產生的標記釘
+        var searchMarker = null; 
 
         function setMode(newMode) {
             mode = newMode;
@@ -128,24 +130,16 @@
             }
         }
 
-        // ★ 新增：處理搜尋輸入框的 Enter 鍵
         function handleSearchEnter(e) {
             if (e.key === 'Enter') {
                 searchCoordinate();
             }
         }
 
-        // ★ 新增：解析輸入座標並移動地圖
         function searchCoordinate() {
             const input = document.getElementById('coordInput').value.trim();
             if (!input) return;
 
-            // 支援的格式：
-            // 24.729, 121.766
-            // 24.729,121.766
-            // 24.729; 121.766
-            // (24.729, 121.766)
-            // [24.729, 121.766]
             const coordsRegex = /^[\(\[]?\s*(-?\d+(\.\d+)?)\s*[,;]\s*(-?\d+(\.\d+)?)\s*[\)\]]?$/;
             const match = input.match(coordsRegex);
 
@@ -153,21 +147,17 @@
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[3]);
 
-                // 移除舊的標記釘
                 if (searchMarker) {
                     map.removeLayer(searchMarker);
                 }
 
-                // 飛到新座標 (18 是縮放大小)
                 map.flyTo([lat, lng], 18, {
-                    duration: 1.5 // 飛行動畫時間 (秒)
+                    duration: 1.5
                 });
 
-                // 放上標記釘
                 searchMarker = L.marker([lat, lng]).addTo(map)
                     .bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
 
-                // 切換回移動模式，方便使用者拖拉
                 setMode('move');
             } else {
                 alert("座標格式無法辨識！\n支援的格式例如：\n24.7295, 121.7664\n(24.7295, 121.7664)");
@@ -179,15 +169,29 @@
             isDrawing = true;
             currentStrokePoints = [];
             currentPolyline = L.polyline([], {color: '#6366f1', weight: 4}).addTo(map);
+            
+            // 記錄第一筆點
+            currentStrokePoints.push([e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)]);
+            currentPolyline.addLatLng(e.latlng);
         });
 
         map.on('mousemove', function(e) {
             if (!isDrawing) return;
-            const lastPoint = currentStrokePoints[currentStrokePoints.length - 1];
-            const newLatLng = e.latlng;
             
-            currentStrokePoints.push([newLatLng.lat.toFixed(6), newLatLng.lng.toFixed(6)]);
-            currentPolyline.addLatLng(newLatLng);
+            const newLatLng = e.latlng;
+            const lastPointArray = currentStrokePoints[currentStrokePoints.length - 1];
+            
+            // 如果這不是第一個點，檢查距離是否超過設定的門檻
+            if (lastPointArray) {
+                const lastPointLatLng = L.latLng(lastPointArray[0], lastPointArray[1]);
+                const distanceToLastPoint = lastPointLatLng.distanceTo(newLatLng);
+
+                // ★ 只有距離大於設定值才記錄，減少點數
+                if (distanceToLastPoint >= MIN_DISTANCE_METERS) {
+                    currentStrokePoints.push([newLatLng.lat.toFixed(6), newLatLng.lng.toFixed(6)]);
+                    currentPolyline.addLatLng(newLatLng);
+                }
+            }
         });
 
         window.addEventListener('mouseup', function() {
@@ -230,7 +234,7 @@
                 list.innerHTML += `
                     <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                         <div>
-                            <div class="text-[10px] font-bold text-indigo-500 uppercase">Stroke ${i+1}</div>
+                            <div class="text-[10px] font-bold text-indigo-500 uppercase">Stroke ${i+1} <span class="ml-2 text-gray-400 font-normal">(${stroke.points.length} 點)</span></div>
                             <div class="text-sm font-mono font-bold text-gray-700">${formatDist(stroke.distance)}</div>
                         </div>
                         <i class="fas fa-check-circle text-emerald-400"></i>
@@ -242,7 +246,6 @@
             counter.innerText = `${allStrokes.length} 筆`;
             if(allStrokes.length === 0) list.innerHTML = '<p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>';
             
-            // 自動捲動到最底下
             list.scrollTop = list.scrollHeight;
         }
 
@@ -258,7 +261,6 @@
             allStrokes = [];
             mapPolylines.forEach(p => map.removeLayer(p));
             mapPolylines = [];
-            // ★ 如果有搜尋的標記釘，也一併清掉
             if (searchMarker) {
                 map.removeLayer(searchMarker);
                 searchMarker = null;
