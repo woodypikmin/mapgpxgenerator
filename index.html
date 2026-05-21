@@ -13,6 +13,29 @@
         .gradient-bg { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
         #map { height: 600px; width: 100%; border-radius: 12px; z-index: 1; }
         .cursor-draw { cursor: crosshair !important; }
+        
+        /* 自訂拉桿樣式 */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #4f46e5;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body class="min-h-screen pb-12">
@@ -21,9 +44,9 @@
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-bold flex items-center gap-3">
-                    <i class="fas fa-ruler-combined"></i> GPX Studio (距離感應版)
+                    <i class="fas fa-ruler-combined"></i> GPX Studio (智慧平滑版)
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">即時計算繪製長度，精準掌握路徑規模</p>
+                <p class="mt-1 opacity-80 text-xs">先描繪形狀，再利用拉桿即時壓縮多餘點數</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -73,6 +96,34 @@
         </div>
 
         <div class="space-y-6">
+            
+            {/* ★ 新增：智慧平滑化搖桿控制面板 */}
+            <div class="bg-indigo-50 rounded-xl shadow-md p-5 border border-indigo-100">
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-black text-indigo-900 flex items-center gap-2">
+                        <i class="fas fa-sliders-h"></i> 智慧壓縮 (平滑度)
+                    </label>
+                    <span id="toleranceDisplay" class="text-xs font-bold text-indigo-600 bg-white px-2 py-1 rounded shadow-sm">
+                        容差: 2m
+                    </span>
+                </div>
+                
+                <input type="range" id="simplifySlider" min="0" max="50" step="1" value="2" class="w-full mb-1" oninput="applySimplification()">
+                
+                <div class="flex justify-between text-[10px] text-indigo-400 font-bold mb-4">
+                    <span>原汁原味 (點最多)</span>
+                    <span>極度平滑 (點最少)</span>
+                </div>
+
+                <div class="pt-3 border-t border-indigo-200/60 flex justify-between items-center">
+                    <span class="text-xs font-bold text-indigo-700">總點數預覽：</span>
+                    <div class="text-right">
+                        <span id="totalOriginalPts" class="text-xs line-through text-indigo-300 mr-1 opacity-70">0</span>
+                        <span id="totalSimplifiedPts" class="text-lg font-black text-indigo-700">0</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100">
                 <div class="flex justify-between items-center mb-4 border-b pb-2">
                     <h3 class="font-semibold text-gray-700 flex items-center gap-2">
@@ -81,7 +132,7 @@
                     <span id="strokeCounter" class="text-xs font-bold text-indigo-600">0 筆</span>
                 </div>
                 
-                <div id="strokeList" class="space-y-2 h-[420px] overflow-y-auto mb-6 pr-2">
+                <div id="strokeList" class="space-y-2 h-[260px] overflow-y-auto mb-6 pr-2">
                     <p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>
                 </div>
 
@@ -100,17 +151,15 @@
     </main>
 
     <script>
-        // ★ 設定取樣間距：移動超過幾公尺才記錄一個點 (數字越大，記錄的點越少)
-        const MIN_DISTANCE_METERS = 50;
-
         var map = L.map('map').setView([25.0336, 121.5648], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         L.control.scale({ imperial: false, metric: true }).addTo(map);
 
-        var allStrokes = []; // [{points: [], distance: 0}, ...]
+        // 資料結構改變：儲存原始點位與平滑後的點位
+        // allStrokes = [{ originalPoints: [], simplifiedPoints: [], polyline: null, distance: 0 }, ...]
+        var allStrokes = []; 
         var currentStrokePoints = [];
         var currentPolyline = null;
-        var mapPolylines = [];
         var isDrawing = false;
         var mode = 'move';
         var searchMarker = null; 
@@ -131,9 +180,7 @@
         }
 
         function handleSearchEnter(e) {
-            if (e.key === 'Enter') {
-                searchCoordinate();
-            }
+            if (e.key === 'Enter') searchCoordinate();
         }
 
         function searchCoordinate() {
@@ -147,22 +194,57 @@
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[3]);
 
-                if (searchMarker) {
-                    map.removeLayer(searchMarker);
-                }
-
-                map.flyTo([lat, lng], 18, {
-                    duration: 1.5
-                });
-
+                if (searchMarker) map.removeLayer(searchMarker);
+                map.flyTo([lat, lng], 18, { duration: 1.5 });
                 searchMarker = L.marker([lat, lng]).addTo(map)
                     .bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
-
                 setMode('move');
             } else {
                 alert("座標格式無法辨識！\n支援的格式例如：\n24.7295, 121.7664\n(24.7295, 121.7664)");
             }
         }
+
+        // ==========================================
+        // Ramer-Douglas-Peucker (RDP) 演算法核心
+        // ==========================================
+        function getSqSegDist(p, p1, p2) {
+            let x = p1[0], y = p1[1], dx = p2[0] - x, dy = p2[1] - y;
+            if (dx !== 0 || dy !== 0) {
+                let t = ((p[0] - x) * dx + (p[1] - y) * dy) / (dx * dx + dy * dy);
+                if (t > 1) { x = p2[0]; y = p2[1]; } 
+                else if (t > 0) { x += dx * t; y += dy * t; }
+            }
+            dx = p[0] - x; dy = p[1] - y;
+            return dx * dx + dy * dy;
+        }
+
+        function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+            let maxSqDist = sqTolerance, index;
+            for (let i = first + 1; i < last; i++) {
+                let sqDist = getSqSegDist(points[i], points[first], points[last]);
+                if (sqDist > maxSqDist) { index = i; maxSqDist = sqDist; }
+            }
+            if (maxSqDist > sqTolerance) {
+                if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+                simplified.push(points[index]);
+                if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+            }
+        }
+
+        function simplifyPath(points, toleranceMeters) {
+            if (points.length <= 2 || toleranceMeters === 0) return [...points];
+            // 將公尺粗略轉換為經緯度距離 (1度約為 111,000公尺)
+            const toleranceDeg = toleranceMeters / 111000;
+            const sqTolerance = toleranceDeg * toleranceDeg;
+            
+            const last = points.length - 1;
+            const simplified = [points[0]];
+            simplifyDPStep(points, 0, last, sqTolerance, simplified);
+            simplified.push(points[last]);
+            
+            return simplified;
+        }
+        // ==========================================
 
         map.on('mousedown', function(e) {
             if (mode !== 'draw') return;
@@ -170,8 +252,7 @@
             currentStrokePoints = [];
             currentPolyline = L.polyline([], {color: '#6366f1', weight: 4}).addTo(map);
             
-            // 記錄第一筆點
-            currentStrokePoints.push([e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)]);
+            currentStrokePoints.push([e.latlng.lat, e.latlng.lng]);
             currentPolyline.addLatLng(e.latlng);
         });
 
@@ -181,14 +262,13 @@
             const newLatLng = e.latlng;
             const lastPointArray = currentStrokePoints[currentStrokePoints.length - 1];
             
-            // 如果這不是第一個點，檢查距離是否超過設定的門檻
             if (lastPointArray) {
                 const lastPointLatLng = L.latLng(lastPointArray[0], lastPointArray[1]);
                 const distanceToLastPoint = lastPointLatLng.distanceTo(newLatLng);
 
-                // ★ 只有距離大於設定值才記錄，減少點數
-                if (distanceToLastPoint >= MIN_DISTANCE_METERS) {
-                    currentStrokePoints.push([newLatLng.lat.toFixed(6), newLatLng.lng.toFixed(6)]);
+                // 保留一個非常小的基礎過濾(2公尺)，防止原地手抖產生數千個垃圾點
+                if (distanceToLastPoint >= 2) {
+                    currentStrokePoints.push([newLatLng.lat, newLatLng.lng]);
                     currentPolyline.addLatLng(newLatLng);
                 }
             }
@@ -197,15 +277,43 @@
         window.addEventListener('mouseup', function() {
             if (!isDrawing) return;
             isDrawing = false;
+            
             if (currentStrokePoints.length > 1) {
-                const dist = calculateDistance(currentStrokePoints);
-                allStrokes.push({ points: currentStrokePoints, distance: dist });
-                mapPolylines.push(currentPolyline);
+                // 畫完馬上執行當前拉桿的壓縮
+                const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
+                const simplified = simplifyPath(currentStrokePoints, currentTolerance);
+                const dist = calculateDistance(simplified);
+                
+                // 更新地圖上的線條為壓縮後的狀態
+                currentPolyline.setLatLngs(simplified);
+                
+                allStrokes.push({ 
+                    originalPoints: currentStrokePoints, 
+                    simplifiedPoints: simplified, 
+                    polyline: currentPolyline,
+                    distance: dist 
+                });
+                
                 updateUI();
             } else {
                 map.removeLayer(currentPolyline);
             }
         });
+
+        // 當拉動滑桿時，即時壓縮所有筆劃
+        window.applySimplification = function() {
+            const tolerance = parseInt(document.getElementById('simplifySlider').value);
+            document.getElementById('toleranceDisplay').innerText = `容差: ${tolerance}m`;
+            
+            allStrokes.forEach(stroke => {
+                const newSimplified = simplifyPath(stroke.originalPoints, tolerance);
+                stroke.simplifiedPoints = newSimplified;
+                stroke.distance = calculateDistance(newSimplified);
+                stroke.polyline.setLatLngs(newSimplified); // 即時重繪地圖上的線條
+            });
+            
+            updateUI();
+        }
 
         function calculateDistance(points) {
             let total = 0;
@@ -226,41 +334,67 @@
             const counter = document.getElementById('strokeCounter');
             const totalDisplay = document.getElementById('totalDist');
             
-            let total = 0;
+            const originalPtsDisplay = document.getElementById('totalOriginalPts');
+            const simplifiedPtsDisplay = document.getElementById('totalSimplifiedPts');
+            
+            let totalDistance = 0;
+            let totalOrigPts = 0;
+            let totalSimpPts = 0;
+            
             list.innerHTML = '';
             
             allStrokes.forEach((stroke, i) => {
-                total += stroke.distance;
+                totalDistance += stroke.distance;
+                totalOrigPts += stroke.originalPoints.length;
+                totalSimpPts += stroke.simplifiedPoints.length;
+                
+                // 計算單筆縮減率
+                const reducedRatio = stroke.originalPoints.length > 0 
+                    ? Math.round((1 - stroke.simplifiedPoints.length / stroke.originalPoints.length) * 100) 
+                    : 0;
+
                 list.innerHTML += `
-                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                        <div>
-                            <div class="text-[10px] font-bold text-indigo-500 uppercase">Stroke ${i+1} <span class="ml-2 text-gray-400 font-normal">(${stroke.points.length} 點)</span></div>
+                    <div class="p-3 bg-gray-50 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="text-[10px] font-bold text-indigo-500 uppercase">Stroke ${i+1}</div>
                             <div class="text-sm font-mono font-bold text-gray-700">${formatDist(stroke.distance)}</div>
                         </div>
-                        <i class="fas fa-check-circle text-emerald-400"></i>
+                        <div class="flex justify-between items-center text-xs">
+                            <div class="text-gray-400 font-mono line-through">${stroke.originalPoints.length}</div>
+                            <div class="text-indigo-600 font-mono font-bold">
+                                <i class="fas fa-arrow-right text-[10px] mx-1"></i> ${stroke.simplifiedPoints.length} 點
+                            </div>
+                            <div class="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                -${reducedRatio}%
+                            </div>
+                        </div>
                     </div>
                 `;
             });
 
-            totalDisplay.innerText = formatDist(total);
+            totalDisplay.innerText = formatDist(totalDistance);
             counter.innerText = `${allStrokes.length} 筆`;
-            if(allStrokes.length === 0) list.innerHTML = '<p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>';
+            originalPtsDisplay.innerText = totalOrigPts;
+            simplifiedPtsDisplay.innerText = totalSimpPts;
+
+            if(allStrokes.length === 0) {
+                list.innerHTML = '<p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>';
+            }
             
             list.scrollTop = list.scrollHeight;
         }
 
         function undoLastStroke() {
             if (allStrokes.length === 0) return;
-            allStrokes.pop();
-            map.removeLayer(mapPolylines.pop());
+            const removedStroke = allStrokes.pop();
+            map.removeLayer(removedStroke.polyline);
             updateUI();
         }
 
         function clearAll() {
             if (!confirm("確定清空所有筆劃？")) return;
+            allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
-            mapPolylines.forEach(p => map.removeLayer(p));
-            mapPolylines = [];
             if (searchMarker) {
                 map.removeLayer(searchMarker);
                 searchMarker = null;
@@ -275,8 +409,9 @@
             if (separate) {
                 allStrokes.forEach((s, i) => {
                     setTimeout(() => {
+                        // 匯出的是「壓縮後」的點位 (simplifiedPoints)
                         let content = header + `  <trk><name>Stroke_${i+1}</name><trkseg>\n` + 
-                            s.points.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
+                            s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                             `\n  </trkseg></trk>\n</gpx>`;
                         saveFile(content, `Stroke_${i+1}.gpx`);
                     }, i * 300);
@@ -284,7 +419,7 @@
             } else {
                 let content = header + allStrokes.map((s, i) => 
                     `  <trk><name>Stroke_${i+1}</name><trkseg>\n` + 
-                    s.points.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
+                    s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                     `\n  </trkseg></trk>`
                 ).join('\n') + `\n</gpx>`;
                 saveFile(content, `Full_Path.gpx`);
