@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPX Studio - 距離感應繪製器</title>
+    <title>自訂 GPX 路線產生器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -43,9 +43,9 @@
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-bold flex items-center gap-3">
-                    <i class="fas fa-route"></i> GPX Studio (專業版)
+                    <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線編輯與四種格式輸出</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線編輯，可輸出 TRK 與飛妹 WPT 格式</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -122,7 +122,7 @@
             <div class="bg-indigo-50 rounded-xl shadow-md p-5 border border-indigo-100">
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-black text-indigo-900 flex items-center gap-2">
-                        <i class="fas fa-sliders-h"></i> 智慧壓縮 (平滑度)
+                        <i class="fas fa-sliders-h"></i> 智慧平滑壓縮
                     </label>
                     <span id="toleranceDisplay" class="text-xs font-bold text-indigo-600 bg-white px-2 py-1 rounded shadow-sm">
                         容差: 2m
@@ -166,10 +166,10 @@
                             <i class="fas fa-link mb-1"></i> 合併 GPX (安卓 trk)
                         </button>
                         <button onclick="downloadWPT(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
-                            <i class="fas fa-map-marker-alt mb-1"></i> 分開 GPX (飛人 wpt)
+                            <i class="fas fa-map-marker-alt mb-1"></i> 分開 GPX (飛妹 wpt)
                         </button>
                         <button onclick="downloadWPT(false)" class="border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50 font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
-                            <i class="fas fa-project-diagram mb-1"></i> 合併 GPX (飛人 wpt)
+                            <i class="fas fa-project-diagram mb-1"></i> 合併 GPX (飛妹 wpt)
                         </button>
                     </div>
                 </div>
@@ -188,7 +188,6 @@
         var isDrawing = false;
         var searchMarker = null; 
 
-        // 狀態管理：主模式 (move, draw) 與 子模式 (freehand, click)
         var mainMode = 'move';
         var subMode = 'freehand';
 
@@ -196,9 +195,11 @@
         var clickPolyline = null;
 
         function setMainMode(newMode) {
-            // 切換前如果正在連線，先完成它
             if (mainMode === 'draw' && subMode === 'click' && newMode !== 'draw' && activeMarkers.length > 0) {
                 finishClickStroke();
+            }
+            if (mainMode === 'draw' && newMode !== 'draw') {
+                isDrawing = false;
             }
 
             mainMode = newMode;
@@ -221,7 +222,6 @@
                 document.getElementById('mode-draw-main').className = activeMain;
                 document.getElementById('draw-sub-modes').classList.remove('hidden');
                 
-                // 啟動最後記憶的子模式
                 setSubMode(subMode);
             }
         }
@@ -275,9 +275,6 @@
             }
         }
 
-        // ==========================================
-        // Ramer-Douglas-Peucker (RDP) 壓縮演算法
-        // ==========================================
         function getSqSegDist(p, p1, p2) {
             let x = p1[0], y = p1[1], dx = p2[0] - x, dy = p2[1] - y;
             if (dx !== 0 || dy !== 0) {
@@ -313,9 +310,6 @@
             return simplified;
         }
 
-        // ==========================================
-        // 自由手繪模式 (Draw -> Freehand)
-        // ==========================================
         map.on('mousedown', function(e) {
             if (mainMode !== 'draw' || subMode !== 'freehand') return;
             isDrawing = true;
@@ -351,14 +345,9 @@
             }
         });
 
-        // ==========================================
-        // 點擊連線模式 (Draw -> Click) 核心邏輯
-        // ==========================================
         function updateClickLine(isDragging = false) {
-            // ★ 修復卡頓：拖曳中「不重新設定圖示」，只更新線條
             if (!isDragging) {
                 activeMarkers.forEach((m, index) => {
-                    // 為了效能，只有當點的編號改變，才重新生成 HTML 圖示
                     if (m._nodeIndex !== index) {
                         const icon = L.divIcon({
                             className: 'custom-node-icon',
@@ -367,7 +356,7 @@
                             iconAnchor: [12, 12]
                         });
                         m.setIcon(icon);
-                        m._nodeIndex = index; // 記憶當前編號
+                        m._nodeIndex = index;
                     }
                 });
             }
@@ -400,16 +389,12 @@
             if (mainMode !== 'draw' || subMode !== 'click') return;
             
             const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
-            marker._nodeIndex = -1; // 初始化編號
+            marker._nodeIndex = -1; 
             activeMarkers.push(marker);
 
-            // ★ 拖曳時：略過圖示更新以保持流暢
             marker.on('drag', function() { updateClickLine(true); });
-            
-            // ★ 拖曳結束：正規化位置與圖示
             marker.on('dragend', function() { updateClickLine(false); });
 
-            // 點擊節點跳出刪除選單
             marker.on('click', function(ev) {
                 L.DomEvent.stopPropagation(ev); 
                 const idx = activeMarkers.indexOf(marker);
@@ -442,12 +427,10 @@
 
             activeMarkers.forEach(m => map.removeLayer(m));
             activeMarkers = [];
+            
             saveStrokeToHistory();
         }
 
-        // ==========================================
-        // 共通存檔與 UI 更新
-        // ==========================================
         function saveStrokeToHistory() {
             const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
             const simplified = simplifyPath(currentStrokePoints, currentTolerance);
@@ -508,6 +491,7 @@
             activeMarkers = [];
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
+            
             if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
             
             currentStrokePoints = [];
@@ -580,12 +564,9 @@
             list.scrollTop = list.scrollHeight;
         }
 
-        // ==========================================
-        // 檔案匯出 (GPX TRK / GPX WPT)
-        // ==========================================
         window.downloadTRK = function(separate) {
             if (allStrokes.length === 0) return;
-            const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+            const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
             if (separate) {
                 allStrokes.forEach((s, i) => {
@@ -608,7 +589,7 @@
 
         window.downloadWPT = function(separate) {
             if (allStrokes.length === 0) return;
-            const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+            const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
             if (separate) {
                 allStrokes.forEach((s, i) => {
