@@ -44,9 +44,9 @@
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-bold flex items-center gap-3">
-                    <i class="fas fa-route"></i> GPX Studio (智慧平滑版)
+                    <i class="fas fa-route"></i> GPX Studio
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援手繪與點擊連線，並可輸出飛人專用 WPT 格式</p>
+                <p class="mt-1 opacity-80 text-xs">支援手繪與精確點擊，即時編輯與飛人 WPT 匯出</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -74,35 +74,42 @@
                 </button>
             </div>
 
-            <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-2 items-center">
-                <button id="moveBtn" onclick="setMode('move')" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white font-bold shadow-md transition-all text-sm">
-                    <i class="fas fa-arrows-alt"></i> 1. 移動
-                </button>
-                <button id="drawBtn" onclick="setMode('draw')" class="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition-all text-sm">
-                    <i class="fas fa-paint-brush"></i> 2. 手繪
-                </button>
-                <button id="clickBtn" onclick="setMode('click')" class="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition-all text-sm">
-                    <i class="fas fa-mouse-pointer"></i> 3. 點擊連線
-                </button>
-                
-                <button id="finishClickBtn" onclick="finishClickStroke()" class="hidden bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow-md transition-colors">
-                    ✅ 完成連線
-                </button>
+            <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div class="flex bg-gray-100 p-1 rounded-lg w-2/3">
+                    <button id="mode-move" onclick="setMode('move')" class="flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all">
+                        <i class="fas fa-hand-paper"></i> 拖曳地圖
+                    </button>
+                    <button id="mode-draw" onclick="setMode('draw')" class="flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all">
+                        <i class="fas fa-signature"></i> 自由手繪
+                    </button>
+                    <button id="mode-click" onclick="setMode('click')" class="flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all">
+                        <i class="fas fa-route"></i> 點擊連線
+                    </button>
+                </div>
 
-                <div class="h-6 w-px bg-gray-200 mx-1 hidden sm:block"></div>
-                
-                <button onclick="undoLastStroke()" class="text-orange-500 hover:bg-orange-50 px-3 py-2 rounded-lg text-sm font-bold">
-                    <i class="fas fa-undo"></i> 撤銷
-                </button>
-                <button onclick="clearAll()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg text-sm font-bold">
-                    <i class="fas fa-trash"></i> 清空
+                <div class="flex gap-2">
+                    <button onclick="undoLastStroke()" class="text-orange-500 hover:bg-orange-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors">
+                        <i class="fas fa-undo"></i> 撤銷
+                    </button>
+                    <button onclick="clearAll()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors">
+                        <i class="fas fa-trash"></i> 清空
+                    </button>
+                </div>
+            </div>
+
+            <div id="clickControls" class="hidden bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex justify-between items-center animate-fade-in">
+                <span class="text-sm font-bold text-emerald-800">
+                    <i class="fas fa-info-circle"></i> 編輯模式：點擊新增節點、按住拖曳、點擊節點可刪除
+                </span>
+                <button onclick="finishClickStroke()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                    ✅ 完成路線
                 </button>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-2 border border-gray-100 relative">
                 <div id="map"></div>
-                <div id="clickHint" class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/80 backdrop-blur text-white px-4 py-2 rounded-full text-xs font-bold pointer-events-none z-[1000] shadow-lg">
-                    點擊地圖標記點位，雙擊左鍵 (或點擊「完成連線」) 結束
+                <div id="clickHint" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-5 py-2.5 rounded-full text-xs font-bold pointer-events-none z-[1000] shadow-xl border border-slate-600">
+                    雙擊左鍵 或 點擊上方「完成路線」結束編輯
                 </div>
             </div>
         </div>
@@ -111,7 +118,7 @@
             <div class="bg-indigo-50 rounded-xl shadow-md p-5 border border-indigo-100">
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-black text-indigo-900 flex items-center gap-2">
-                        <i class="fas fa-sliders-h"></i> 智慧壓縮 (平滑度)
+                        <i class="fas fa-sliders-h"></i> 智慧平滑壓縮
                     </label>
                     <span id="toleranceDisplay" class="text-xs font-bold text-indigo-600 bg-white px-2 py-1 rounded shadow-sm">
                         容差: 2m
@@ -149,14 +156,14 @@
                 <div class="pt-4 border-t border-gray-100 space-y-2 shrink-0">
                     <div class="flex gap-2">
                         <button onclick="downloadAllStrokes(true)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 text-xs">
-                            <i class="fas fa-route"></i> 分開 TRK
+                            <i class="fas fa-route"></i> 分開 GPX
                         </button>
                         <button onclick="downloadAllStrokes(false)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 text-xs">
-                            <i class="fas fa-link"></i> 合併 TRK
+                            <i class="fas fa-link"></i> 合併 GPX
                         </button>
                     </div>
                     <button onclick="downloadWPT()" class="w-full border-2 border-emerald-500 text-emerald-600 hover:bg-emerald-50 font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 text-sm shadow-sm">
-                        <i class="fas fa-map-marker-alt"></i> 匯出為 WPT (飛人格式)
+                        <i class="fas fa-map-marker-alt"></i> 匯出為 WPT (飛人點位)
                     </button>
                 </div>
             </div>
@@ -175,44 +182,47 @@
         var mode = 'move';
         var searchMarker = null; 
 
+        // ★ 新增：點擊連線模式專用變數
+        var activeMarkers = [];
+        var clickPolyline = null;
+
         function setMode(newMode) {
-            // 如果原本是在點擊模式且有點，先把它存起來
-            if (mode === 'click' && newMode !== 'click') {
+            // 切換模式前，如果正在點擊連線，先幫使用者完成它
+            if (mode === 'click' && newMode !== 'click' && activeMarkers.length > 0) {
                 finishClickStroke();
+            }
+            if (mode === 'draw' && newMode !== 'draw') {
+                isDrawing = false;
             }
 
             mode = newMode;
             
-            const activeClass = "flex-1 py-2 rounded-lg bg-indigo-600 text-white font-bold shadow-md transition-all text-sm";
-            const inactiveClass = "flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition-all text-sm";
-
-            document.getElementById('moveBtn').className = inactiveClass;
-            document.getElementById('drawBtn').className = inactiveClass;
-            document.getElementById('clickBtn').className = inactiveClass;
+            // UI 更新：切換按鈕顏色
+            const inactiveClass = "flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all";
+            const activeClass = "flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all";
             
-            document.getElementById('finishClickBtn').classList.add('hidden');
+            document.getElementById('mode-move').className = inactiveClass;
+            document.getElementById('mode-draw').className = inactiveClass;
+            document.getElementById('mode-click').className = inactiveClass;
+            document.getElementById('mode-' + mode).className = activeClass;
+            
+            document.getElementById('clickControls').classList.add('hidden');
             document.getElementById('clickHint').classList.add('hidden');
             
-            // 恢復預設行為
             map.doubleClickZoom.enable();
 
             if (mode === 'move') {
-                document.getElementById('moveBtn').className = activeClass;
                 map.dragging.enable();
                 document.getElementById('map').classList.remove('cursor-draw');
             } else if (mode === 'draw') {
-                document.getElementById('drawBtn').className = activeClass;
-                map.dragging.disable();
+                map.dragging.disable(); // 手繪時禁止地圖拖曳
                 document.getElementById('map').classList.add('cursor-draw');
             } else if (mode === 'click') {
-                document.getElementById('clickBtn').className = activeClass;
-                document.getElementById('finishClickBtn').classList.remove('hidden');
-                document.getElementById('clickHint').classList.remove('hidden');
-                
-                // 點擊連線模式下允許拖曳地圖，但關閉雙擊放大以配合雙擊結束連線
-                map.dragging.enable();
-                map.doubleClickZoom.disable();
+                map.dragging.enable();  // 點擊連線時，允許拖曳地圖！
+                map.doubleClickZoom.disable(); // 關閉雙擊放大，因為要用來結束連線
                 document.getElementById('map').classList.add('cursor-draw');
+                document.getElementById('clickControls').classList.remove('hidden');
+                document.getElementById('clickHint').classList.remove('hidden');
             }
         }
 
@@ -237,12 +247,12 @@
                     .bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
                 setMode('move');
             } else {
-                alert("座標格式無法辨識！\n支援的格式例如：\n24.7295, 121.7664");
+                alert("座標格式無法辨識！");
             }
         }
 
         // ==========================================
-        // Ramer-Douglas-Peucker (RDP) 演算法核心
+        // Ramer-Douglas-Peucker (RDP) 壓縮演算法
         // ==========================================
         function getSqSegDist(p, p1, p2) {
             let x = p1[0], y = p1[1], dx = p2[0] - x, dy = p2[1] - y;
@@ -277,35 +287,29 @@
             const simplified = [points[0]];
             simplifyDPStep(points, 0, last, sqTolerance, simplified);
             simplified.push(points[last]);
-            
             return simplified;
         }
 
         // ==========================================
-        // 地圖繪製事件處理 (手繪 & 點擊)
+        // 自由手繪模式 (Draw)
         // ==========================================
         map.on('mousedown', function(e) {
             if (mode !== 'draw') return;
             isDrawing = true;
             currentStrokePoints = [];
             currentPolyline = L.polyline([], {color: '#6366f1', weight: 4}).addTo(map);
-            
             currentStrokePoints.push([e.latlng.lat, e.latlng.lng]);
             currentPolyline.addLatLng(e.latlng);
         });
 
         map.on('mousemove', function(e) {
             if (mode !== 'draw' || !isDrawing) return;
-            
             const newLatLng = e.latlng;
             const lastPointArray = currentStrokePoints[currentStrokePoints.length - 1];
             
             if (lastPointArray) {
                 const lastPointLatLng = L.latLng(lastPointArray[0], lastPointArray[1]);
-                const distanceToLastPoint = lastPointLatLng.distanceTo(newLatLng);
-
-                // 2公尺基礎過濾防手抖
-                if (distanceToLastPoint >= 2) {
+                if (lastPointLatLng.distanceTo(newLatLng) >= 2) {
                     currentStrokePoints.push([newLatLng.lat, newLatLng.lng]);
                     currentPolyline.addLatLng(newLatLng);
                 }
@@ -324,43 +328,109 @@
             }
         });
 
-        // 處理「點擊連線」模式的點擊事件
+        // ==========================================
+        // 點擊連線模式 (Click) 核心邏輯
+        // ==========================================
+        function updateClickLine() {
+            // 重新整理節點數字標籤
+            activeMarkers.forEach((m, index) => {
+                const icon = L.divIcon({
+                    className: 'custom-node-icon',
+                    html: `<div class='bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-[11px] font-black border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform'>${index + 1}</div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                m.setIcon(icon);
+            });
+
+            // 繪製與更新紅色虛線
+            const latlngs = activeMarkers.map(m => m.getLatLng());
+            if (!clickPolyline) {
+                clickPolyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, dashArray: '5, 10'}).addTo(map);
+            } else {
+                clickPolyline.setLatLngs(latlngs);
+            }
+            
+            // 同步座標供計算使用
+            currentStrokePoints = latlngs.map(ll => [ll.lat, ll.lng]);
+        }
+
+        window.deleteActiveMarker = function(index) {
+            if (activeMarkers[index]) {
+                map.removeLayer(activeMarkers[index]);
+                activeMarkers.splice(index, 1);
+                map.closePopup();
+                
+                if (activeMarkers.length === 0 && clickPolyline) {
+                    map.removeLayer(clickPolyline);
+                    clickPolyline = null;
+                }
+                updateClickLine();
+            }
+        }
+
         map.on('click', function(e) {
             if (mode !== 'click') return;
             
-            if (currentStrokePoints.length === 0) {
-                // 第一個點，用紅色虛線代表未完成
-                currentStrokePoints.push([e.latlng.lat, e.latlng.lng]);
-                currentPolyline = L.polyline(currentStrokePoints, {color: '#ef4444', weight: 4, dashArray: '5, 10'}).addTo(map);
-            } else {
-                currentStrokePoints.push([e.latlng.lat, e.latlng.lng]);
-                currentPolyline.setLatLngs(currentStrokePoints);
-            }
+            // 創建可拖曳的節點 Marker
+            const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+            activeMarkers.push(marker);
+
+            // 拖曳時：即時更新虛線
+            marker.on('drag', function() {
+                updateClickLine();
+            });
+
+            // 點擊節點時：跳出刪除按鈕
+            marker.on('click', function(ev) {
+                L.DomEvent.stopPropagation(ev); // 防止觸發地圖點擊(避免多畫一個點)
+                const idx = activeMarkers.indexOf(marker);
+                L.popup({ offset: [0, -10], closeButton: false })
+                    .setLatLng(marker.getLatLng())
+                    .setContent(`
+                        <div class="text-center p-1">
+                            <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${idx + 1}</p>
+                            <button onclick="deleteActiveMarker(${idx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">
+                                🗑️ 刪除此點
+                            </button>
+                        </div>
+                    `)
+                    .openOn(map);
+            });
+
+            updateClickLine();
         });
 
         // 雙擊完成連線
         map.on('dblclick', function(e) {
             if (mode === 'click') {
-                L.DomEvent.stopPropagation(e); // 防止地圖放大
+                L.DomEvent.stopPropagation(e);
                 finishClickStroke();
             }
         });
 
-        // 完成點擊連線
         window.finishClickStroke = function() {
-            if (mode !== 'click') return;
-            if (currentStrokePoints.length > 1) {
-                // 恢復正常顏色並存檔
+            if (mode !== 'click' || activeMarkers.length === 0) return;
+            
+            // 把紅色虛線轉換為正式藍色路線
+            if (clickPolyline) {
+                currentPolyline = clickPolyline;
                 currentPolyline.setStyle({color: '#6366f1', dashArray: null});
-                saveStrokeToHistory();
-            } else if (currentPolyline) {
-                map.removeLayer(currentPolyline);
-                currentStrokePoints = [];
-                currentPolyline = null;
+                clickPolyline = null;
+            } else if (activeMarkers.length === 1) {
+                currentPolyline = L.polyline(currentStrokePoints, {color: '#6366f1', weight: 4}).addTo(map);
             }
+
+            // 清除地圖上的數字圓點
+            activeMarkers.forEach(m => map.removeLayer(m));
+            activeMarkers = [];
+            
+            saveStrokeToHistory();
         }
 
-        // 共通的存檔邏輯
+        // ==========================================
+        // 共通存檔與 UI 更新
+        // ==========================================
         function saveStrokeToHistory() {
             const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
             const simplified = simplifyPath(currentStrokePoints, currentTolerance);
@@ -380,7 +450,6 @@
             updateUI();
         }
 
-        // 當拉動滑桿時，即時壓縮所有已完成筆劃
         window.applySimplification = function() {
             const tolerance = parseInt(document.getElementById('simplifySlider').value);
             document.getElementById('toleranceDisplay').innerText = `容差: ${tolerance}m`;
@@ -391,24 +460,23 @@
                 stroke.distance = calculateDistance(newSimplified);
                 stroke.polyline.setLatLngs(newSimplified);
             });
-            
             updateUI();
         }
 
         window.undoLastStroke = function() {
-            // 如果正在點擊連線中，先撤銷最後一個端點
-            if (mode === 'click' && currentStrokePoints.length > 0) {
-                currentStrokePoints.pop();
-                if (currentStrokePoints.length === 0) {
-                    map.removeLayer(currentPolyline);
-                    currentPolyline = null;
-                } else {
-                    currentPolyline.setLatLngs(currentStrokePoints);
+            // 優先處理：如果正在點擊連線，先退回上一個節點
+            if (mode === 'click' && activeMarkers.length > 0) {
+                const m = activeMarkers.pop();
+                map.removeLayer(m);
+                if (activeMarkers.length === 0 && clickPolyline) {
+                    map.removeLayer(clickPolyline);
+                    clickPolyline = null;
                 }
+                updateClickLine();
                 return;
             }
 
-            // 否則撤銷最後一個完成的筆劃
+            // 否則：撤銷上一條完整路線
             if (allStrokes.length === 0) return;
             const removedStroke = allStrokes.pop();
             map.removeLayer(removedStroke.polyline);
@@ -416,18 +484,20 @@
         }
 
         window.clearAll = function() {
-            if (!confirm("確定清空所有筆劃？")) return;
+            if (!confirm("確定清空所有筆劃與節點？")) return;
+            
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
-            if (currentPolyline) {
-                map.removeLayer(currentPolyline);
-                currentPolyline = null;
-                currentStrokePoints = [];
-            }
-            if (searchMarker) {
-                map.removeLayer(searchMarker);
-                searchMarker = null;
-            }
+            
+            // 清除正在點擊的點
+            activeMarkers.forEach(m => map.removeLayer(m));
+            activeMarkers = [];
+            if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
+            if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
+            
+            if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
+            
+            currentStrokePoints = [];
             updateUI();
         }
 
@@ -499,7 +569,9 @@
             list.scrollTop = list.scrollHeight;
         }
 
-        // ★ TRK 匯出邏輯
+        // ==========================================
+        // 檔案匯出 (GPX / WPT)
+        // ==========================================
         window.downloadAllStrokes = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
@@ -523,14 +595,12 @@
             }
         }
 
-        // ★ 新增：WPT (飛人格式) 匯出邏輯
         window.downloadWPT = function() {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             let wptContent = "";
             let ptIndex = 1;
             
-            // 將所有點位獨立匯出為 waypoint
             allStrokes.forEach((s) => {
                 s.simplifiedPoints.forEach(p => {
                     wptContent += `  <wpt lat="${p[0]}" lon="${p[1]}"><name>Pt_${ptIndex++}</name></wpt>\n`;
