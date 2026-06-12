@@ -14,7 +14,6 @@
         #map { height: 600px; width: 100%; border-radius: 12px; z-index: 1; }
         .cursor-draw { cursor: crosshair !important; }
         
-        /* 自訂拉桿樣式 */
         input[type=range] {
             -webkit-appearance: none;
             background: transparent;
@@ -44,9 +43,9 @@
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-bold flex items-center gap-3">
-                    <i class="fas fa-route"></i> GPX Studio
+                    <i class="fas fa-route"></i> GPX Studio (專業版)
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援手繪與精確點擊，即時編輯與飛人 WPT 匯出</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線編輯與四種格式輸出</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -74,17 +73,25 @@
                 </button>
             </div>
 
-            <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                <div class="flex bg-gray-100 p-1 rounded-lg w-2/3">
-                    <button id="mode-move" onclick="setMode('move')" class="flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all">
-                        <i class="fas fa-hand-paper"></i> 拖曳地圖
-                    </button>
-                    <button id="mode-draw" onclick="setMode('draw')" class="flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all">
-                        <i class="fas fa-signature"></i> 自由手繪
-                    </button>
-                    <button id="mode-click" onclick="setMode('click')" class="flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all">
-                        <i class="fas fa-route"></i> 點擊連線
-                    </button>
+            <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                    <div class="flex bg-gray-100 p-1 rounded-lg">
+                        <button id="mode-move" onclick="setMainMode('move')" class="px-4 py-2 text-sm font-bold rounded-md bg-indigo-600 text-white shadow-sm transition-all flex items-center gap-1.5">
+                            <i class="fas fa-hand-paper"></i> 1. 拖曳地圖
+                        </button>
+                        <button id="mode-draw-main" onclick="setMainMode('draw')" class="px-4 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all flex items-center gap-1.5">
+                            <i class="fas fa-pen-nib"></i> 2. 繪製路線
+                        </button>
+                    </div>
+
+                    <div id="draw-sub-modes" class="hidden flex bg-indigo-50 p-1 rounded-lg border border-indigo-100">
+                        <button id="submode-freehand" onclick="setSubMode('freehand')" class="px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all">
+                            自由手繪
+                        </button>
+                        <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
+                            點擊連線
+                        </button>
+                    </div>
                 </div>
 
                 <div class="flex gap-2">
@@ -99,18 +106,15 @@
 
             <div id="clickControls" class="hidden bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex justify-between items-center animate-fade-in">
                 <span class="text-sm font-bold text-emerald-800">
-                    <i class="fas fa-info-circle"></i> 編輯模式：點擊新增節點、按住拖曳、點擊節點可刪除
+                    <i class="fas fa-info-circle"></i> 點擊連線：點地圖新增點位、拖拉數字可移動、點擊數字可刪除
                 </span>
                 <button onclick="finishClickStroke()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
-                    ✅ 完成路線
+                    ✅ 結束此段路線
                 </button>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-2 border border-gray-100 relative">
                 <div id="map"></div>
-                <div id="clickHint" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-5 py-2.5 rounded-full text-xs font-bold pointer-events-none z-[1000] shadow-xl border border-slate-600">
-                    雙擊左鍵 或 點擊上方「完成路線」結束編輯
-                </div>
             </div>
         </div>
 
@@ -118,7 +122,7 @@
             <div class="bg-indigo-50 rounded-xl shadow-md p-5 border border-indigo-100">
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-black text-indigo-900 flex items-center gap-2">
-                        <i class="fas fa-sliders-h"></i> 智慧平滑壓縮
+                        <i class="fas fa-sliders-h"></i> 智慧壓縮 (平滑度)
                     </label>
                     <span id="toleranceDisplay" class="text-xs font-bold text-indigo-600 bg-white px-2 py-1 rounded shadow-sm">
                         容差: 2m
@@ -154,17 +158,20 @@
                 </div>
 
                 <div class="pt-4 border-t border-gray-100 space-y-2 shrink-0">
-                    <div class="flex gap-2">
-                        <button onclick="downloadAllStrokes(true)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 text-xs">
-                            <i class="fas fa-route"></i> 分開 GPX
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="downloadTRK(true)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
+                            <i class="fas fa-route mb-1"></i> 分開 GPX (安卓 trk)
                         </button>
-                        <button onclick="downloadAllStrokes(false)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 text-xs">
-                            <i class="fas fa-link"></i> 合併 GPX
+                        <button onclick="downloadTRK(false)" class="border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50 font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
+                            <i class="fas fa-link mb-1"></i> 合併 GPX (安卓 trk)
+                        </button>
+                        <button onclick="downloadWPT(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
+                            <i class="fas fa-map-marker-alt mb-1"></i> 分開 GPX (飛人 wpt)
+                        </button>
+                        <button onclick="downloadWPT(false)" class="border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50 font-bold py-2 rounded-lg shadow-sm transition-all text-xs flex flex-col items-center justify-center">
+                            <i class="fas fa-project-diagram mb-1"></i> 合併 GPX (飛人 wpt)
                         </button>
                     </div>
-                    <button onclick="downloadWPT()" class="w-full border-2 border-emerald-500 text-emerald-600 hover:bg-emerald-50 font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 text-sm shadow-sm">
-                        <i class="fas fa-map-marker-alt"></i> 匯出為 WPT (飛人點位)
-                    </button>
                 </div>
             </div>
         </div>
@@ -179,50 +186,70 @@
         var currentStrokePoints = [];
         var currentPolyline = null;
         var isDrawing = false;
-        var mode = 'move';
         var searchMarker = null; 
 
-        // ★ 新增：點擊連線模式專用變數
+        // 狀態管理：主模式 (move, draw) 與 子模式 (freehand, click)
+        var mainMode = 'move';
+        var subMode = 'freehand';
+
         var activeMarkers = [];
         var clickPolyline = null;
 
-        function setMode(newMode) {
-            // 切換模式前，如果正在點擊連線，先幫使用者完成它
-            if (mode === 'click' && newMode !== 'click' && activeMarkers.length > 0) {
+        function setMainMode(newMode) {
+            // 切換前如果正在連線，先完成它
+            if (mainMode === 'draw' && subMode === 'click' && newMode !== 'draw' && activeMarkers.length > 0) {
                 finishClickStroke();
             }
-            if (mode === 'draw' && newMode !== 'draw') {
+
+            mainMode = newMode;
+            
+            const activeMain = "px-4 py-2 text-sm font-bold rounded-md bg-indigo-600 text-white shadow-sm transition-all flex items-center gap-1.5";
+            const inactiveMain = "px-4 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all flex items-center gap-1.5";
+
+            if (mainMode === 'move') {
+                document.getElementById('mode-move').className = activeMain;
+                document.getElementById('mode-draw-main').className = inactiveMain;
+                document.getElementById('draw-sub-modes').classList.add('hidden');
+                document.getElementById('clickControls').classList.add('hidden');
+                
+                map.dragging.enable();
+                map.doubleClickZoom.enable();
+                document.getElementById('map').classList.remove('cursor-draw');
                 isDrawing = false;
+            } else if (mainMode === 'draw') {
+                document.getElementById('mode-move').className = inactiveMain;
+                document.getElementById('mode-draw-main').className = activeMain;
+                document.getElementById('draw-sub-modes').classList.remove('hidden');
+                
+                // 啟動最後記憶的子模式
+                setSubMode(subMode);
+            }
+        }
+
+        function setSubMode(newSubMode) {
+            if (subMode === 'click' && newSubMode !== 'click' && activeMarkers.length > 0) {
+                finishClickStroke();
             }
 
-            mode = newMode;
+            subMode = newSubMode;
             
-            // UI 更新：切換按鈕顏色
-            const inactiveClass = "flex-1 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all";
-            const activeClass = "flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all";
-            
-            document.getElementById('mode-move').className = inactiveClass;
-            document.getElementById('mode-draw').className = inactiveClass;
-            document.getElementById('mode-click').className = inactiveClass;
-            document.getElementById('mode-' + mode).className = activeClass;
-            
-            document.getElementById('clickControls').classList.add('hidden');
-            document.getElementById('clickHint').classList.add('hidden');
-            
-            map.doubleClickZoom.enable();
+            const activeSub = "px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all";
+            const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all";
 
-            if (mode === 'move') {
-                map.dragging.enable();
-                document.getElementById('map').classList.remove('cursor-draw');
-            } else if (mode === 'draw') {
-                map.dragging.disable(); // 手繪時禁止地圖拖曳
+            document.getElementById('submode-freehand').className = inactiveSub;
+            document.getElementById('submode-click').className = inactiveSub;
+            document.getElementById('submode-' + subMode).className = activeSub;
+
+            if (subMode === 'freehand') {
+                document.getElementById('clickControls').classList.add('hidden');
+                map.dragging.disable();
+                map.doubleClickZoom.enable();
                 document.getElementById('map').classList.add('cursor-draw');
-            } else if (mode === 'click') {
-                map.dragging.enable();  // 點擊連線時，允許拖曳地圖！
-                map.doubleClickZoom.disable(); // 關閉雙擊放大，因為要用來結束連線
-                document.getElementById('map').classList.add('cursor-draw');
+            } else if (subMode === 'click') {
                 document.getElementById('clickControls').classList.remove('hidden');
-                document.getElementById('clickHint').classList.remove('hidden');
+                map.dragging.enable(); 
+                map.doubleClickZoom.disable(); 
+                document.getElementById('map').classList.add('cursor-draw');
             }
         }
 
@@ -233,19 +260,16 @@
         function searchCoordinate() {
             const input = document.getElementById('coordInput').value.trim();
             if (!input) return;
-
             const coordsRegex = /^[\(\[]?\s*(-?\d+(\.\d+)?)\s*[,;]\s*(-?\d+(\.\d+)?)\s*[\)\]]?$/;
             const match = input.match(coordsRegex);
 
             if (match) {
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[3]);
-
                 if (searchMarker) map.removeLayer(searchMarker);
                 map.flyTo([lat, lng], 18, { duration: 1.5 });
-                searchMarker = L.marker([lat, lng]).addTo(map)
-                    .bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
-                setMode('move');
+                searchMarker = L.marker([lat, lng]).addTo(map).bindPopup(`<b>搜尋位置</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
+                setMainMode('move');
             } else {
                 alert("座標格式無法辨識！");
             }
@@ -282,7 +306,6 @@
             if (points.length <= 2 || toleranceMeters === 0) return [...points];
             const toleranceDeg = toleranceMeters / 111000;
             const sqTolerance = toleranceDeg * toleranceDeg;
-            
             const last = points.length - 1;
             const simplified = [points[0]];
             simplifyDPStep(points, 0, last, sqTolerance, simplified);
@@ -291,10 +314,10 @@
         }
 
         // ==========================================
-        // 自由手繪模式 (Draw)
+        // 自由手繪模式 (Draw -> Freehand)
         // ==========================================
         map.on('mousedown', function(e) {
-            if (mode !== 'draw') return;
+            if (mainMode !== 'draw' || subMode !== 'freehand') return;
             isDrawing = true;
             currentStrokePoints = [];
             currentPolyline = L.polyline([], {color: '#6366f1', weight: 4}).addTo(map);
@@ -303,7 +326,7 @@
         });
 
         map.on('mousemove', function(e) {
-            if (mode !== 'draw' || !isDrawing) return;
+            if (mainMode !== 'draw' || subMode !== 'freehand' || !isDrawing) return;
             const newLatLng = e.latlng;
             const lastPointArray = currentStrokePoints[currentStrokePoints.length - 1];
             
@@ -317,7 +340,7 @@
         });
 
         window.addEventListener('mouseup', function() {
-            if (mode !== 'draw' || !isDrawing) return;
+            if (mainMode !== 'draw' || subMode !== 'freehand' || !isDrawing) return;
             isDrawing = false;
             
             if (currentStrokePoints.length > 1) {
@@ -329,21 +352,26 @@
         });
 
         // ==========================================
-        // 點擊連線模式 (Click) 核心邏輯
+        // 點擊連線模式 (Draw -> Click) 核心邏輯
         // ==========================================
-        function updateClickLine() {
-            // 重新整理節點數字標籤
-            activeMarkers.forEach((m, index) => {
-                const icon = L.divIcon({
-                    className: 'custom-node-icon',
-                    html: `<div class='bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-[11px] font-black border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform'>${index + 1}</div>`,
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
+        function updateClickLine(isDragging = false) {
+            // ★ 修復卡頓：拖曳中「不重新設定圖示」，只更新線條
+            if (!isDragging) {
+                activeMarkers.forEach((m, index) => {
+                    // 為了效能，只有當點的編號改變，才重新生成 HTML 圖示
+                    if (m._nodeIndex !== index) {
+                        const icon = L.divIcon({
+                            className: 'custom-node-icon',
+                            html: `<div class='bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-[11px] font-black border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform'>${index + 1}</div>`,
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        });
+                        m.setIcon(icon);
+                        m._nodeIndex = index; // 記憶當前編號
+                    }
                 });
-                m.setIcon(icon);
-            });
+            }
 
-            // 繪製與更新紅色虛線
             const latlngs = activeMarkers.map(m => m.getLatLng());
             if (!clickPolyline) {
                 clickPolyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, dashArray: '5, 10'}).addTo(map);
@@ -351,7 +379,6 @@
                 clickPolyline.setLatLngs(latlngs);
             }
             
-            // 同步座標供計算使用
             currentStrokePoints = latlngs.map(ll => [ll.lat, ll.lng]);
         }
 
@@ -365,25 +392,26 @@
                     map.removeLayer(clickPolyline);
                     clickPolyline = null;
                 }
-                updateClickLine();
+                updateClickLine(false);
             }
         }
 
         map.on('click', function(e) {
-            if (mode !== 'click') return;
+            if (mainMode !== 'draw' || subMode !== 'click') return;
             
-            // 創建可拖曳的節點 Marker
             const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+            marker._nodeIndex = -1; // 初始化編號
             activeMarkers.push(marker);
 
-            // 拖曳時：即時更新虛線
-            marker.on('drag', function() {
-                updateClickLine();
-            });
+            // ★ 拖曳時：略過圖示更新以保持流暢
+            marker.on('drag', function() { updateClickLine(true); });
+            
+            // ★ 拖曳結束：正規化位置與圖示
+            marker.on('dragend', function() { updateClickLine(false); });
 
-            // 點擊節點時：跳出刪除按鈕
+            // 點擊節點跳出刪除選單
             marker.on('click', function(ev) {
-                L.DomEvent.stopPropagation(ev); // 防止觸發地圖點擊(避免多畫一個點)
+                L.DomEvent.stopPropagation(ev); 
                 const idx = activeMarkers.indexOf(marker);
                 L.popup({ offset: [0, -10], closeButton: false })
                     .setLatLng(marker.getLatLng())
@@ -398,21 +426,12 @@
                     .openOn(map);
             });
 
-            updateClickLine();
-        });
-
-        // 雙擊完成連線
-        map.on('dblclick', function(e) {
-            if (mode === 'click') {
-                L.DomEvent.stopPropagation(e);
-                finishClickStroke();
-            }
+            updateClickLine(false);
         });
 
         window.finishClickStroke = function() {
-            if (mode !== 'click' || activeMarkers.length === 0) return;
+            if (mainMode !== 'draw' || subMode !== 'click' || activeMarkers.length === 0) return;
             
-            // 把紅色虛線轉換為正式藍色路線
             if (clickPolyline) {
                 currentPolyline = clickPolyline;
                 currentPolyline.setStyle({color: '#6366f1', dashArray: null});
@@ -421,10 +440,8 @@
                 currentPolyline = L.polyline(currentStrokePoints, {color: '#6366f1', weight: 4}).addTo(map);
             }
 
-            // 清除地圖上的數字圓點
             activeMarkers.forEach(m => map.removeLayer(m));
             activeMarkers = [];
-            
             saveStrokeToHistory();
         }
 
@@ -464,19 +481,17 @@
         }
 
         window.undoLastStroke = function() {
-            // 優先處理：如果正在點擊連線，先退回上一個節點
-            if (mode === 'click' && activeMarkers.length > 0) {
+            if (mainMode === 'draw' && subMode === 'click' && activeMarkers.length > 0) {
                 const m = activeMarkers.pop();
                 map.removeLayer(m);
                 if (activeMarkers.length === 0 && clickPolyline) {
                     map.removeLayer(clickPolyline);
                     clickPolyline = null;
                 }
-                updateClickLine();
+                updateClickLine(false);
                 return;
             }
 
-            // 否則：撤銷上一條完整路線
             if (allStrokes.length === 0) return;
             const removedStroke = allStrokes.pop();
             map.removeLayer(removedStroke.polyline);
@@ -489,12 +504,10 @@
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
             
-            // 清除正在點擊的點
             activeMarkers.forEach(m => map.removeLayer(m));
             activeMarkers = [];
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
-            
             if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
             
             currentStrokePoints = [];
@@ -519,7 +532,6 @@
             const list = document.getElementById('strokeList');
             const counter = document.getElementById('strokeCounter');
             const totalDisplay = document.getElementById('totalDist');
-            
             const originalPtsDisplay = document.getElementById('totalOriginalPts');
             const simplifiedPtsDisplay = document.getElementById('totalSimplifiedPts');
             
@@ -565,14 +577,13 @@
             if(allStrokes.length === 0) {
                 list.innerHTML = '<p class="text-gray-400 text-xs italic text-center mt-10">請開始在地圖上繪製...</p>';
             }
-            
             list.scrollTop = list.scrollHeight;
         }
 
         // ==========================================
-        // 檔案匯出 (GPX / WPT)
+        // 檔案匯出 (GPX TRK / GPX WPT)
         // ==========================================
-        window.downloadAllStrokes = function(separate) {
+        window.downloadTRK = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
@@ -582,7 +593,7 @@
                         let content = header + `  <trk><name>Path_${i+1}</name><trkseg>\n` + 
                             s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                             `\n  </trkseg></trk>\n</gpx>`;
-                        saveFile(content, `Path_${i+1}.gpx`);
+                        saveFile(content, `Path_${i+1}_TRK.gpx`);
                     }, i * 300);
                 });
             } else {
@@ -591,24 +602,37 @@
                     s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                     `\n  </trkseg></trk>`
                 ).join('\n') + `\n</gpx>`;
-                saveFile(content, `Combined_Route.gpx`);
+                saveFile(content, `Combined_Routes_TRK.gpx`);
             }
         }
 
-        window.downloadWPT = function() {
+        window.downloadWPT = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Studio" xmlns="http://www.topografix.com/GPX/1/1">\n`;
-            let wptContent = "";
-            let ptIndex = 1;
             
-            allStrokes.forEach((s) => {
-                s.simplifiedPoints.forEach(p => {
-                    wptContent += `  <wpt lat="${p[0]}" lon="${p[1]}"><name>Pt_${ptIndex++}</name></wpt>\n`;
+            if (separate) {
+                allStrokes.forEach((s, i) => {
+                    setTimeout(() => {
+                        let wptContent = "";
+                        let ptIndex = 1;
+                        s.simplifiedPoints.forEach(p => {
+                            wptContent += `  <wpt lat="${p[0]}" lon="${p[1]}"><name>Pt_${ptIndex++}</name></wpt>\n`;
+                        });
+                        let content = header + wptContent + `</gpx>`;
+                        saveFile(content, `Path_${i+1}_WPT.gpx`);
+                    }, i * 300);
                 });
-            });
-            
-            let content = header + wptContent + `</gpx>`;
-            saveFile(content, `FlyGPS_Waypoints.gpx`);
+            } else {
+                let wptContent = "";
+                let ptIndex = 1;
+                allStrokes.forEach((s) => {
+                    s.simplifiedPoints.forEach(p => {
+                        wptContent += `  <wpt lat="${p[0]}" lon="${p[1]}"><name>Pt_${ptIndex++}</name></wpt>\n`;
+                    });
+                });
+                let content = header + wptContent + `</gpx>`;
+                saveFile(content, `Combined_Routes_WPT.gpx`);
+            }
         }
 
         function saveFile(content, name) {
