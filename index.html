@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線，點擊已存路段可進行獨立編輯或刪除</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線，右側清單可直接選取路段進行獨立編輯或刪除</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -186,8 +186,6 @@
         var currentStrokePoints = [];
         var currentPolyline = null;
         var isDrawing = false;
-        
-        // ★ 修正：多點搜尋支援，將單一標記改為陣列
         var searchMarkers = []; 
 
         var mainMode = 'move';
@@ -259,7 +257,6 @@
             if (e.key === 'Enter') searchCoordinate();
         }
 
-        // ★ 核心修復 1：多點搜尋支援，且不阻斷目前的繪製模式
         function searchCoordinate() {
             const input = document.getElementById('coordInput').value.trim();
             if (!input) return;
@@ -272,12 +269,9 @@
                 
                 map.flyTo([lat, lng], 17, { duration: 1.2 });
                 
-                // 創建新標記並推進陣列，不清空之前的搜尋
                 const marker = L.marker([lat, lng]).addTo(map)
                     .bindPopup(`<b>搜尋點 ${searchMarkers.length + 1}</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
                 searchMarkers.push(marker);
-                
-                // 移除原有的 setMainMode('move')，保持使用者當前的繪圖狀態！
             } else {
                 alert("座標格式無法辨識！");
             }
@@ -357,7 +351,7 @@
         });
 
         // ==========================================
-        // 點擊連線模式 (Click) 及絲滑拖曳機制
+        // 點擊連線模式 (Click) 核心邏輯
         // ==========================================
         function updateClickLine(isDragging = false) {
             if (!isDragging) {
@@ -441,7 +435,7 @@
         }
 
         // ==========================================
-        // ★ 核心修復 2：已儲存路線點擊互動系統 (編輯與單獨刪除)
+        // 路線存檔與點擊互動 (清單按鈕連動)
         // ==========================================
         function saveStrokeToHistory() {
             const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
@@ -450,7 +444,6 @@
             
             currentPolyline.setLatLngs(simplified);
             
-            // 建立歷史物件
             const strokeObj = { 
                 originalPoints: currentStrokePoints, 
                 simplifiedPoints: simplified, 
@@ -460,26 +453,12 @@
             
             allStrokes.push(strokeObj);
 
-            // 為每一條存在地圖上的線綁定點擊事件
+            // 地圖上的線條一樣保留點擊事件作為備用
             const layerId = currentPolyline._leaflet_id;
             currentPolyline.on('click', function(ev) {
-                // 防呆：如果使用者正在二選一「繪圖中」，禁止點擊舊線段觸發彈窗
                 if (mainMode === 'draw') return;
-
-                L.DomEvent.stopPropagation(ev); // 阻斷傳遞
-                
-                L.popup()
-                    .setLatLng(ev.latlng)
-                    .setContent(`
-                        <div class="text-center p-2">
-                            <p class="text-xs font-bold mb-2 text-gray-700">已存路線段 (${formatDist(strokeObj.distance)})</p>
-                            <div class="flex gap-2">
-                                <button onclick="window.editSavedStrokeByLayerId(${layerId})" class="bg-indigo-500 hover:bg-indigo-600 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow transition-colors">✏️ 編輯</button>
-                                <button onclick="window.deleteSavedStrokeByLayerId(${layerId})" class="bg-red-500 hover:bg-red-600 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除</button>
-                            </div>
-                        </div>
-                    `)
-                    .openOn(map);
+                L.DomEvent.stopPropagation(ev);
+                window.showRoutePopup(layerId, ev.latlng, strokeObj.distance);
             });
             
             currentStrokePoints = [];
@@ -487,7 +466,23 @@
             updateUI();
         }
 
-        // 單獨刪除指定的已存線段
+        // 地圖上的彈窗輔助
+        window.showRoutePopup = function(id, latlng, distance) {
+            L.popup()
+                .setLatLng(latlng)
+                .setContent(`
+                    <div class="text-center p-2">
+                        <p class="text-xs font-bold mb-2 text-gray-700">已存路線段 (${formatDist(distance)})</p>
+                        <div class="flex gap-2">
+                            <button onclick="window.editSavedStrokeByLayerId(${id})" class="bg-indigo-500 hover:bg-indigo-600 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow transition-colors">✏️ 編輯</button>
+                            <button onclick="window.deleteSavedStrokeByLayerId(${id})" class="bg-red-500 hover:bg-red-600 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除</button>
+                        </div>
+                    </div>
+                `)
+                .openOn(map);
+        };
+
+        // ★ 核心修復：由右側清單直接觸發「刪除」
         window.deleteSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
@@ -498,23 +493,21 @@
             }
         };
 
-        // 把確定存好的路線「重新還原」回編輯狀態進行微調
+        // ★ 核心修復：由右側清單直接將舊線段抽回「點擊連線」進行編輯
         window.editSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
                 const stroke = allStrokes[idx];
                 
-                // 如果目前編輯區正好有沒收尾的點，先幫他儲存
                 if (mainMode === 'draw' && subMode === 'click' && activeMarkers.length > 0) {
                     finishClickStroke();
                 }
                 
-                // 從歷史與地圖移除這條線
                 map.removeLayer(stroke.polyline);
                 allStrokes.splice(idx, 1);
                 map.closePopup();
                 
-                // 自動切換到點擊編輯狀態，並把點位轉換回可拉動的節點！
+                // 自動切換到點擊繪圖模式
                 setMainMode('draw');
                 setSubMode('click');
                 
@@ -546,7 +539,7 @@
         };
 
         // ==========================================
-        // 基礎控制
+        // 基礎控制與下載
         // ==========================================
         window.applySimplification = function() {
             const tolerance = parseInt(document.getElementById('simplifySlider').value);
@@ -581,19 +574,14 @@
 
         window.clearAll = function() {
             if (!confirm("確定清空所有筆劃與節點？")) return;
-            
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
-            
             activeMarkers.forEach(m => map.removeLayer(m));
             activeMarkers = [];
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
-            
-            // 清空所有搜尋大頭針
             searchMarkers.forEach(m => map.removeLayer(m));
             searchMarkers = [];
-            
             currentStrokePoints = [];
             updateUI();
         }
@@ -612,6 +600,7 @@
             return m > 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m";
         }
 
+        // ★ UI 更新：在卡片中直接塞入「編輯」與「刪除」按鈕
         function updateUI() {
             const list = document.getElementById('strokeList');
             const counter = document.getElementById('strokeCounter');
@@ -630,6 +619,7 @@
                 totalOrigPts += stroke.originalPoints.length;
                 totalSimpPts += stroke.simplifiedPoints.length;
                 
+                const layerId = stroke.polyline._leaflet_id;
                 const reducedRatio = stroke.originalPoints.length > 0 
                     ? Math.round((1 - stroke.simplifiedPoints.length / stroke.originalPoints.length) * 100) 
                     : 0;
@@ -649,6 +639,10 @@
                                 -${reducedRatio}%
                             </div>
                         </div>
+                        <div class="flex gap-2 mt-2 pt-2 border-t border-gray-200/60 justify-end">
+                            <button onclick="window.editSavedStrokeByLayerId(${layerId})" class="text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded text-xs font-black transition-colors"><i class="fas fa-edit"></i> 編輯</button>
+                            <button onclick="window.deleteSavedStrokeByLayerId(${layerId})" class="text-red-500 hover:bg-red-50 px-2 py-1 rounded text-xs font-black transition-colors"><i class="fas fa-trash-alt"></i> 刪除</button>
+                        </div>
                     </div>
                 `;
             });
@@ -664,9 +658,6 @@
             list.scrollTop = list.scrollHeight;
         }
 
-        // ==========================================
-        // ★ 核心修復 3：全新改版的四按鈕下載格式 (安卓 trk / 飛妹 wpt)
-        // ==========================================
         window.downloadTRK = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
