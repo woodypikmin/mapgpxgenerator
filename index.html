@@ -145,6 +145,16 @@
                 </div>
             </div>
 
+            {/* ★ 新增：自訂檔案名稱欄位 */}
+            <div class="bg-white rounded-xl shadow-md p-5 border border-gray-100">
+                <label class="text-sm font-bold text-gray-700 block mb-2">
+                    <i class="fas fa-file-signature text-indigo-500 mr-1"></i> 自訂檔案名稱 (選填)
+                </label>
+                <input type="text" id="fileNameInput" 
+                    class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-700 placeholder-gray-300" 
+                    placeholder="例如：我的散步路線">
+            </div>
+
             <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100 flex flex-col h-[400px]">
                 <div class="flex justify-between items-center mb-4 border-b pb-2 shrink-0">
                     <h3 class="font-semibold text-gray-700 flex items-center gap-2">
@@ -453,7 +463,6 @@
             
             allStrokes.push(strokeObj);
 
-            // 地圖上的線條一樣保留點擊事件作為備用
             const layerId = currentPolyline._leaflet_id;
             currentPolyline.on('click', function(ev) {
                 if (mainMode === 'draw') return;
@@ -466,7 +475,6 @@
             updateUI();
         }
 
-        // 地圖上的彈窗輔助
         window.showRoutePopup = function(id, latlng, distance) {
             L.popup()
                 .setLatLng(latlng)
@@ -482,7 +490,6 @@
                 .openOn(map);
         };
 
-        // ★ 核心修復：由右側清單直接觸發「刪除」
         window.deleteSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
@@ -493,7 +500,6 @@
             }
         };
 
-        // ★ 核心修復：由右側清單直接將舊線段抽回「點擊連線」進行編輯
         window.editSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
@@ -507,7 +513,6 @@
                 allStrokes.splice(idx, 1);
                 map.closePopup();
                 
-                // 自動切換到點擊繪圖模式
                 setMainMode('draw');
                 setSubMode('click');
                 
@@ -600,7 +605,6 @@
             return m > 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m";
         }
 
-        // ★ UI 更新：在卡片中直接塞入「編輯」與「刪除」按鈕
         function updateUI() {
             const list = document.getElementById('strokeList');
             const counter = document.getElementById('strokeCounter');
@@ -662,13 +666,16 @@
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
+            const customNameInput = document.getElementById('fileNameInput').value.trim();
+            const baseFileName = customNameInput ? customNameInput : `Export_${new Date().getTime()}`;
+            
             if (separate) {
                 allStrokes.forEach((s, i) => {
                     setTimeout(() => {
                         let content = header + `  <trk><name>Path_${i+1}</name><trkseg>\n` + 
                             s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                             `\n  </trkseg></trk>\n</gpx>`;
-                        saveFile(content, `Path_${i+1}_TRK.gpx`);
+                        saveFile(content, `${baseFileName}_${i+1}(TRK).gpx`);
                     }, i * 300);
                 });
             } else {
@@ -677,7 +684,7 @@
                     s.simplifiedPoints.map(p => `    <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n') + 
                     `\n  </trkseg></trk>`
                 ).join('\n') + `\n</gpx>`;
-                saveFile(content, `Combined_Routes_TRK.gpx`);
+                saveFile(content, `${baseFileName}(TRK).gpx`);
             }
         }
 
@@ -685,6 +692,9 @@
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
             
+            const customNameInput = document.getElementById('fileNameInput').value.trim();
+            const baseFileName = customNameInput ? customNameInput : `Export_${new Date().getTime()}`;
+
             if (separate) {
                 allStrokes.forEach((s, i) => {
                     setTimeout(() => {
@@ -694,7 +704,7 @@
                             wptContent += `  <wpt lat="${p[0]}" lon="${p[1]}"><name>Pt_${ptIndex++}</name></wpt>\n`;
                         });
                         let content = header + wptContent + `</gpx>`;
-                        saveFile(content, `Path_${i+1}_WPT.gpx`);
+                        saveFile(content, `${baseFileName}_${i+1}(WPT).gpx`);
                     }, i * 300);
                 });
             } else {
@@ -706,7 +716,7 @@
                     });
                 });
                 let content = header + wptContent + `</gpx>`;
-                saveFile(content, `Combined_Routes_WPT.gpx`);
+                saveFile(content, `${baseFileName}(WPT).gpx`);
             }
         }
 
