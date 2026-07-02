@@ -11,7 +11,7 @@
     <style>
         body { background-color: #f8fafc; }
         .gradient-bg { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
-        #map { height: 680px; width: 100%; border-radius: 12px; z-index: 1; }
+        #map { height: 600px; width: 100%; border-radius: 12px; z-index: 1; }
         .cursor-draw { cursor: crosshair !important; }
         
         input[type=range] {
@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線，右側清單可直接選取路段進行獨立編輯或刪除</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、點擊連線、多邊形自動網格填滿</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -77,7 +77,7 @@
                 <div class="flex items-center gap-2">
                     <div class="flex bg-gray-100 p-1 rounded-lg">
                         <button id="mode-move" onclick="setMainMode('move')" class="px-4 py-2 text-sm font-bold rounded-md bg-indigo-600 text-white shadow-sm transition-all flex items-center gap-1.5">
-                            <i class="fas fa-hand-paper"></i> 1. 拖曳與選取路段
+                            <i class="fas fa-hand-paper"></i> 1. 拖曳與選取
                         </button>
                         <button id="mode-draw-main" onclick="setMainMode('draw')" class="px-4 py-2 text-sm font-bold rounded-md text-gray-500 hover:text-gray-700 transition-all flex items-center gap-1.5">
                             <i class="fas fa-pen-nib"></i> 2. 繪製路線
@@ -88,8 +88,11 @@
                         <button id="submode-freehand" onclick="setSubMode('freehand')" class="px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all">
                             自由手繪
                         </button>
-                        <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
+                        <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
                             點擊連線
+                        </button>
+                        <button id="submode-polygon" onclick="setSubMode('polygon')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
+                            <i class="fas fa-border-all"></i> 區域網格填滿
                         </button>
                     </div>
                 </div>
@@ -104,12 +107,26 @@
                 </div>
             </div>
 
-            <div id="clickControls" class="hidden bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex justify-between items-center animate-fade-in">
+            <div id="clickControls" class="hidden bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex justify-between items-center">
                 <span class="text-sm font-bold text-emerald-800">
                     <i class="fas fa-info-circle"></i> 點擊連線中：可自由拖曳紅點、單擊紅點可刪除該轉折。
                 </span>
                 <button onclick="finishClickStroke()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
                     ✅ 儲存此段路線
+                </button>
+            </div>
+
+            <div id="polygonControls" class="hidden bg-indigo-50 border border-indigo-200 p-3 rounded-xl flex justify-between items-center">
+                <span class="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                    <i class="fas fa-draw-polygon"></i> 
+                    請點擊地圖畫出多邊形範圍，設定間距：
+                    <div class="flex items-center bg-white border border-indigo-200 rounded px-2">
+                        <input type="number" id="gridGap" value="20" min="5" class="w-12 text-center text-indigo-700 font-bold outline-none bg-transparent py-1">
+                        <span class="text-indigo-400 font-bold">m</span>
+                    </div>
+                </span>
+                <button onclick="generatePolygonGrid()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                    🤖 產生網格路線
                 </button>
             </div>
 
@@ -151,7 +168,7 @@
                 </label>
                 <input type="text" id="fileNameInput" 
                     class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 placeholder-gray-300" 
-                    placeholder="例如：我的散步路線">
+                    placeholder="例如：我的花朵鋪路計畫">
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100 flex flex-col h-[400px]">
@@ -202,10 +219,12 @@
 
         var activeMarkers = [];
         var clickPolyline = null;
+        var polygonLayer = null; // ★ 新增：用於顯示多邊形範圍
 
         function setMainMode(newMode) {
-            if (mainMode === 'draw' && subMode === 'click' && newMode !== 'draw' && activeMarkers.length > 0) {
-                finishClickStroke();
+            if (mainMode === 'draw' && activeMarkers.length > 0) {
+                if (subMode === 'click') finishClickStroke();
+                if (subMode === 'polygon') clearPolygonTemp();
             }
             if (mainMode === 'draw' && newMode !== 'draw') {
                 isDrawing = false;
@@ -221,6 +240,7 @@
                 document.getElementById('mode-draw-main').className = inactiveMain;
                 document.getElementById('draw-sub-modes').classList.add('hidden');
                 document.getElementById('clickControls').classList.add('hidden');
+                document.getElementById('polygonControls').classList.add('hidden');
                 
                 map.dragging.enable();
                 map.doubleClickZoom.enable();
@@ -235,27 +255,43 @@
             }
         }
 
+        function clearPolygonTemp() {
+            activeMarkers.forEach(m => map.removeLayer(m));
+            activeMarkers = [];
+            if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
+        }
+
         function setSubMode(newSubMode) {
-            if (subMode === 'click' && newSubMode !== 'click' && activeMarkers.length > 0) {
-                finishClickStroke();
+            if (activeMarkers.length > 0 && subMode !== newSubMode) {
+                if (subMode === 'click') finishClickStroke();
+                if (subMode === 'polygon') clearPolygonTemp();
             }
 
             subMode = newSubMode;
             
             const activeSub = "px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all";
-            const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all";
+            const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200";
 
             document.getElementById('submode-freehand').className = inactiveSub;
             document.getElementById('submode-click').className = inactiveSub;
+            document.getElementById('submode-polygon').className = inactiveSub;
+            
             document.getElementById('submode-' + subMode).className = activeSub;
 
+            document.getElementById('clickControls').classList.add('hidden');
+            document.getElementById('polygonControls').classList.add('hidden');
+
             if (subMode === 'freehand') {
-                document.getElementById('clickControls').classList.add('hidden');
                 map.dragging.disable();
                 map.doubleClickZoom.enable();
                 document.getElementById('map').classList.add('cursor-draw');
             } else if (subMode === 'click') {
                 document.getElementById('clickControls').classList.remove('hidden');
+                map.dragging.enable(); 
+                map.doubleClickZoom.disable(); 
+                document.getElementById('map').classList.add('cursor-draw');
+            } else if (subMode === 'polygon') {
+                document.getElementById('polygonControls').classList.remove('hidden');
                 map.dragging.enable(); 
                 map.doubleClickZoom.disable(); 
                 document.getElementById('map').classList.add('cursor-draw');
@@ -360,9 +396,9 @@
         });
 
         // ==========================================
-        // 點擊連線模式 (Click) 核心邏輯
+        // 點擊/多邊形 共用繪製邏輯
         // ==========================================
-        function updateClickLine(isDragging = false) {
+        function updateActiveLine(isDragging = false) {
             if (!isDragging) {
                 activeMarkers.forEach((m, index) => {
                     if (m._nodeIndex !== index) {
@@ -379,12 +415,22 @@
             }
 
             const latlngs = activeMarkers.map(m => m.getLatLng());
-            if (!clickPolyline) {
-                clickPolyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, dashArray: '5, 10'}).addTo(map);
-            } else {
-                clickPolyline.setLatLngs(latlngs);
+            
+            if (subMode === 'click') {
+                if (!clickPolyline) {
+                    clickPolyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, dashArray: '5, 10'}).addTo(map);
+                } else {
+                    clickPolyline.setLatLngs(latlngs);
+                }
+                currentStrokePoints = latlngs.map(ll => [ll.lat, ll.lng]);
+            } else if (subMode === 'polygon') {
+                if (latlngs.length > 0) latlngs.push(latlngs[0]); // 閉合多邊形
+                if (!polygonLayer) {
+                    polygonLayer = L.polygon(latlngs, {color: '#10b981', fillColor: '#10b981', fillOpacity: 0.2, weight: 3, dashArray: '5, 5'}).addTo(map);
+                } else {
+                    polygonLayer.setLatLngs(latlngs);
+                }
             }
-            currentStrokePoints = latlngs.map(ll => [ll.lat, ll.lng]);
         }
 
         window.deleteActiveMarker = function(index) {
@@ -392,23 +438,23 @@
                 map.removeLayer(activeMarkers[index]);
                 activeMarkers.splice(index, 1);
                 map.closePopup();
-                if (activeMarkers.length === 0 && clickPolyline) {
-                    map.removeLayer(clickPolyline);
-                    clickPolyline = null;
+                if (activeMarkers.length === 0) {
+                    if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
+                    if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
                 }
-                updateClickLine(false);
+                updateActiveLine(false);
             }
         }
 
         map.on('click', function(e) {
-            if (mainMode !== 'draw' || subMode !== 'click') return;
+            if (mainMode !== 'draw' || (subMode !== 'click' && subMode !== 'polygon')) return;
             
             const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
             marker._nodeIndex = -1; 
             activeMarkers.push(marker);
 
-            marker.on('drag', function() { updateClickLine(true); });
-            marker.on('dragend', function() { updateClickLine(false); });
+            marker.on('drag', function() { updateActiveLine(true); });
+            marker.on('dragend', function() { updateActiveLine(false); });
 
             marker.on('click', function(ev) {
                 L.DomEvent.stopPropagation(ev); 
@@ -424,7 +470,7 @@
                     .openOn(map);
             });
 
-            updateClickLine(false);
+            updateActiveLine(false);
         });
 
         window.finishClickStroke = function() {
@@ -442,6 +488,88 @@
             activeMarkers = [];
             saveStrokeToHistory();
         }
+
+        // ★ 核心功能：多邊形網格演算法 (Scanline Fill)
+        window.generatePolygonGrid = function() {
+            if (activeMarkers.length < 3) return alert("請至少標記 3 個點來形成一個多邊形！");
+            
+            const gapInput = document.getElementById('gridGap').value;
+            const gapMeters = parseFloat(gapInput) || 20;
+            if (gapMeters < 5) return alert("為避免瀏覽器當機，間距不能小於 5 公尺！");
+
+            // 取得所有端點座標
+            const points = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
+            
+            // 找出 Bounding Box
+            let minLat = Infinity, maxLat = -Infinity;
+            points.forEach(p => {
+                if (p[0] < minLat) minLat = p[0];
+                if (p[0] > maxLat) maxLat = p[0];
+            });
+
+            // 將公尺轉換為緯度度數 (1度緯度約等於 111,320 公尺)
+            const latStep = gapMeters / 111320;
+            
+            let path = [];
+            let leftToRight = true;
+
+            // 從北到南掃描
+            for (let currentLat = maxLat; currentLat >= minLat; currentLat -= latStep) {
+                let intersections = [];
+                
+                // 檢查每一條邊是否與水平掃描線相交
+                for (let i = 0; i < points.length; i++) {
+                    let p1 = points[i];
+                    let p2 = points[(i + 1) % points.length]; // 閉合連接
+                    
+                    let y1 = p1[0], x1 = p1[1];
+                    let y2 = p2[0], x2 = p2[1];
+
+                    // 如果線段穿過目前的掃描線
+                    if ((y1 >= currentLat && y2 < currentLat) || (y1 < currentLat && y2 >= currentLat)) {
+                        // 利用內插法求交點的經度 (x)
+                        let intersectLng = x1 + (x2 - x1) * (currentLat - y1) / (y2 - y1);
+                        intersections.push(intersectLng);
+                    }
+                }
+
+                // 排序交點，由西到東
+                intersections.sort((a, b) => a - b);
+                
+                // 兩兩一組成線段
+                if (intersections.length >= 2) {
+                    let rowSegments = [];
+                    for(let k=0; k<intersections.length-1; k+=2) {
+                        rowSegments.push([intersections[k], intersections[k+1]]);
+                    }
+
+                    // 依據貪食蛇折返邏輯，決定串接方向
+                    if (leftToRight) {
+                        for(let k=0; k<rowSegments.length; k++) {
+                            path.push([currentLat, rowSegments[k][0]]);
+                            path.push([currentLat, rowSegments[k][1]]);
+                        }
+                    } else {
+                        for(let k=rowSegments.length-1; k>=0; k--) {
+                            path.push([currentLat, rowSegments[k][1]]);
+                            path.push([currentLat, rowSegments[k][0]]);
+                        }
+                    }
+                    leftToRight = !leftToRight; // 下一列反轉
+                }
+            }
+
+            if (path.length > 0) {
+                currentStrokePoints = path;
+                currentPolyline = L.polyline(path, {color: '#6366f1', weight: 4}).addTo(map);
+                
+                // 清除暫存多邊形
+                clearPolygonTemp();
+                saveStrokeToHistory();
+            } else {
+                alert("無法生成網格，請確認多邊形範圍是否太小！");
+            }
+        };
 
         // ==========================================
         // 路線存檔與點擊互動 (清單按鈕連動)
@@ -504,8 +632,9 @@
             if (idx !== -1) {
                 const stroke = allStrokes[idx];
                 
-                if (mainMode === 'draw' && subMode === 'click' && activeMarkers.length > 0) {
-                    finishClickStroke();
+                if (mainMode === 'draw' && activeMarkers.length > 0) {
+                    if (subMode === 'click') finishClickStroke();
+                    if (subMode === 'polygon') clearPolygonTemp();
                 }
                 
                 map.removeLayer(stroke.polyline);
@@ -520,8 +649,8 @@
                     marker._nodeIndex = -1;
                     activeMarkers.push(marker);
 
-                    marker.on('drag', function() { updateClickLine(true); });
-                    marker.on('dragend', function() { updateClickLine(false); });
+                    marker.on('drag', function() { updateActiveLine(true); });
+                    marker.on('dragend', function() { updateActiveLine(false); });
                     marker.on('click', function(ev) {
                         L.DomEvent.stopPropagation(ev); 
                         const mIdx = activeMarkers.indexOf(marker);
@@ -537,7 +666,7 @@
                     });
                 });
                 
-                updateClickLine(false);
+                updateActiveLine(false);
                 updateUI();
             }
         };
@@ -559,14 +688,14 @@
         }
 
         window.undoLastStroke = function() {
-            if (mainMode === 'draw' && subMode === 'click' && activeMarkers.length > 0) {
+            if (mainMode === 'draw' && (subMode === 'click' || subMode === 'polygon') && activeMarkers.length > 0) {
                 const m = activeMarkers.pop();
                 map.removeLayer(m);
-                if (activeMarkers.length === 0 && clickPolyline) {
-                    map.removeLayer(clickPolyline);
-                    clickPolyline = null;
+                if (activeMarkers.length === 0) {
+                    if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
+                    if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
                 }
-                updateClickLine(false);
+                updateActiveLine(false);
                 return;
             }
 
@@ -580,8 +709,7 @@
             if (!confirm("確定清空所有筆劃與節點？")) return;
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
-            activeMarkers.forEach(m => map.removeLayer(m));
-            activeMarkers = [];
+            clearPolygonTemp();
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
             searchMarkers.forEach(m => map.removeLayer(m));
