@@ -125,13 +125,28 @@
                         ✅ 儲存此網格
                     </button>
                 </div>
+
                 <div class="flex items-center gap-4 w-full bg-white p-3 rounded-lg border border-indigo-100 shadow-sm">
                     <label class="text-xs font-bold text-indigo-600 shrink-0">網格間距：</label>
-                    <input type="range" id="gridGapSlider" min="5" max="100" step="1" value="20" class="flex-1" oninput="updateGridGapUI(this.value, false)">
+
+                    <!-- 滑桿保留常用範圍，方便細調；超過 1000m 可直接在右側數字框輸入 -->
+                    <input type="range" id="gridGapSlider"
+                        min="5" max="1000" step="5" value="20"
+                        class="flex-1"
+                        oninput="updateGridGapUI(this.value, false)">
+
                     <div class="flex items-center border border-indigo-200 rounded px-2 shrink-0 bg-indigo-50/50">
-                        <input type="number" id="gridGap" value="20" min="5" max="200" class="w-12 text-center text-indigo-700 font-bold outline-none bg-transparent py-1 text-sm" oninput="updateGridGapUI(this.value, true)">
+                        <input type="number" id="gridGap"
+                            value="20" min="5" max="10000" step="5"
+                            class="w-20 text-center text-indigo-700 font-bold outline-none bg-transparent py-1 text-sm"
+                            oninput="updateGridGapUI(this.value, true)"
+                            onblur="normalizeGridGapInput()">
                         <span class="text-indigo-400 font-bold text-xs">m</span>
                     </div>
+                </div>
+
+                <div class="text-[10px] text-indigo-500 font-bold px-1">
+                    可設定 5m ～ 10000m；滑桿快速調整至 1000m，1000m 以上請直接輸入數值。
                 </div>
             </div>
 
@@ -434,11 +449,12 @@
                 }
                 currentStrokePoints = latlngs.map(ll => [ll.lat, ll.lng]);
             } else if (subMode === 'polygon') {
-                if (latlngs.length > 0) latlngs.push(latlngs[0]); 
+                const polygonLatLngs = [...latlngs];
+                if (polygonLatLngs.length > 0) polygonLatLngs.push(polygonLatLngs[0]); 
                 if (!polygonLayer) {
-                    polygonLayer = L.polygon(latlngs, {color: '#10b981', fillColor: '#10b981', fillOpacity: 0.15, weight: 3, dashArray: '5, 5'}).addTo(map);
+                    polygonLayer = L.polygon(polygonLatLngs, {color: '#10b981', fillColor: '#10b981', fillOpacity: 0.15, weight: 3, dashArray: '5, 5'}).addTo(map);
                 } else {
-                    polygonLayer.setLatLngs(latlngs);
+                    polygonLayer.setLatLngs(polygonLatLngs);
                 }
                 previewPolygonGrid();
             }
@@ -504,17 +520,76 @@
         // ==========================================
         // 多邊形網格預覽與儲存
         // ==========================================
+
+        function clampGridGap(value) {
+            const n = parseFloat(value);
+            if (!Number.isFinite(n)) return null;
+            return Math.max(5, Math.min(10000, n));
+        }
+
         window.updateGridGapUI = function(val, fromInput) {
+            const value = clampGridGap(val);
+            if (value === null) return;
+
+            const slider = document.getElementById('gridGapSlider');
+            const input = document.getElementById('gridGap');
+
             if (fromInput) {
-                document.getElementById('gridGapSlider').value = val;
+                // 數字框允許到 10000m；滑桿超過 1000m 時停在最右端即可
+                slider.value = Math.min(value, parseFloat(slider.max));
             } else {
-                document.getElementById('gridGap').value = val;
+                input.value = value;
             }
+
             previewPolygonGrid();
+        }
+
+        window.normalizeGridGapInput = function() {
+            const input = document.getElementById('gridGap');
+            const slider = document.getElementById('gridGapSlider');
+            const value = clampGridGap(input.value);
+
+            if (value === null) {
+                input.value = 20;
+                slider.value = 20;
+            } else {
+                input.value = value;
+                slider.value = Math.min(value, parseFloat(slider.max));
+            }
+
+            previewPolygonGrid();
+        }
+
+        // 計算某一條緯度掃描線與多邊形的所有交點區段
+        function getPolygonRowSegments(points, currentLat) {
+            let intersections = [];
+
+            for (let i = 0; i < points.length; i++) {
+                let p1 = points[i];
+                let p2 = points[(i + 1) % points.length];
+
+                let y1 = p1[0], x1 = p1[1];
+                let y2 = p2[0], x2 = p2[1];
+
+                if ((y1 >= currentLat && y2 < currentLat) || (y1 < currentLat && y2 >= currentLat)) {
+                    let intersectLng = x1 + (x2 - x1) * (currentLat - y1) / (y2 - y1);
+                    intersections.push(intersectLng);
+                }
+            }
+
+            intersections.sort((a, b) => a - b);
+
+            let rowSegments = [];
+            for (let k = 0; k < intersections.length - 1; k += 2) {
+                rowSegments.push([intersections[k], intersections[k + 1]]);
+            }
+
+            return rowSegments;
         }
 
         window.previewPolygonGrid = function() {
             if (mainMode !== 'draw' || subMode !== 'polygon') return;
+
             if (activeMarkers.length < 3) {
                 if (polygonGridPolyline) {
                     map.removeLayer(polygonGridPolyline);
@@ -525,8 +600,7 @@
             }
 
             const gapInput = document.getElementById('gridGap').value;
-            const gapMeters = parseFloat(gapInput) || 20;
-            if (gapMeters < 5) return;
+            const gapMeters = clampGridGap(gapInput) ?? 20;
 
             const points = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
             
@@ -537,45 +611,53 @@
             });
 
             const latStep = gapMeters / 111320;
+            const polygonHeightMeters = Math.max(0, (maxLat - minLat) * 111320);
+
+            let scanLatitudes = [];
+
+            // ★ 如果設定間距大於或等於區域高度，至少在中央產生一條掃描線
+            if (polygonHeightMeters <= gapMeters) {
+                scanLatitudes.push((maxLat + minLat) / 2);
+            } else {
+                // ★ 從區域內部半格處開始，避免剛好落在最頂邊造成沒有交點
+                let currentLat = maxLat - latStep / 2;
+                while (currentLat > minLat) {
+                    scanLatitudes.push(currentLat);
+                    currentLat -= latStep;
+                }
+            }
+
             let path = [];
             let leftToRight = true;
 
-            for (let currentLat = maxLat; currentLat >= minLat; currentLat -= latStep) {
-                let intersections = [];
-                for (let i = 0; i < points.length; i++) {
-                    let p1 = points[i];
-                    let p2 = points[(i + 1) % points.length];
-                    
-                    let y1 = p1[0], x1 = p1[1];
-                    let y2 = p2[0], x2 = p2[1];
+            scanLatitudes.forEach(currentLat => {
+                const rowSegments = getPolygonRowSegments(points, currentLat);
 
-                    if ((y1 >= currentLat && y2 < currentLat) || (y1 < currentLat && y2 >= currentLat)) {
-                        let intersectLng = x1 + (x2 - x1) * (currentLat - y1) / (y2 - y1);
-                        intersections.push(intersectLng);
-                    }
-                }
-
-                intersections.sort((a, b) => a - b);
-                
-                if (intersections.length >= 2) {
-                    let rowSegments = [];
-                    for(let k=0; k<intersections.length-1; k+=2) {
-                        rowSegments.push([intersections[k], intersections[k+1]]);
-                    }
-
+                if (rowSegments.length > 0) {
                     if (leftToRight) {
-                        for(let k=0; k<rowSegments.length; k++) {
+                        for (let k = 0; k < rowSegments.length; k++) {
                             path.push([currentLat, rowSegments[k][0]]);
                             path.push([currentLat, rowSegments[k][1]]);
                         }
                     } else {
-                        for(let k=rowSegments.length-1; k>=0; k--) {
+                        for (let k = rowSegments.length - 1; k >= 0; k--) {
                             path.push([currentLat, rowSegments[k][1]]);
                             path.push([currentLat, rowSegments[k][0]]);
                         }
                     }
                     leftToRight = !leftToRight;
                 }
+            });
+
+            // ★ 極端情況保底：若前面仍沒有產生任何線，再嘗試多邊形中央緯度一次
+            if (path.length === 0) {
+                const centerLat = (maxLat + minLat) / 2;
+                const fallbackSegments = getPolygonRowSegments(points, centerLat);
+
+                fallbackSegments.forEach(seg => {
+                    path.push([centerLat, seg[0]]);
+                    path.push([centerLat, seg[1]]);
+                });
             }
 
             tempGridPoints = path;
@@ -602,9 +684,9 @@
             currentStrokePoints = tempGridPoints;
             currentPolyline = polygonGridPolyline;
             
-            // ★ 紀錄多邊形的頂點與當時設定的間距，以便未來編輯還原
+            // 紀錄多邊形的頂點與當時設定的間距，以便未來編輯還原
             const vertices = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
-            const savedGap = document.getElementById('gridGap').value;
+            const savedGap = clampGridGap(document.getElementById('gridGap').value) ?? 20;
 
             polygonGridPolyline = null;
             tempGridPoints = [];
@@ -616,7 +698,6 @@
         // ==========================================
         // 路線存檔與點擊互動 (清單按鈕連動)
         // ==========================================
-        // ★ 加入 isPolygon, polyVertices, gridGap 參數
         function saveStrokeToHistory(isPolygon = false, polyVertices = [], gridGap = 20) {
             const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
             const simplified = simplifyPath(currentStrokePoints, currentTolerance);
@@ -673,7 +754,7 @@
             }
         };
 
-        // ★ 編輯邏輯優化：能夠還原多邊形網格
+        // 編輯邏輯：能夠還原多邊形網格與最高 10000m 的間距
         window.editSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
@@ -692,8 +773,11 @@
                 
                 if (stroke.isPolygon) {
                     setSubMode('polygon');
-                    document.getElementById('gridGap').value = stroke.gridGap;
-                    document.getElementById('gridGapSlider').value = stroke.gridGap;
+
+                    const restoredGap = clampGridGap(stroke.gridGap) ?? 20;
+                    const slider = document.getElementById('gridGapSlider');
+                    document.getElementById('gridGap').value = restoredGap;
+                    slider.value = Math.min(restoredGap, parseFloat(slider.max));
                     
                     stroke.polygonVertices.forEach(p => {
                         const marker = L.marker(p, { draggable: true }).addTo(map);
@@ -754,7 +838,6 @@
             document.getElementById('toleranceDisplay').innerText = `容差: ${tolerance}m`;
             
             allStrokes.forEach(stroke => {
-                // 如果是網格路線，要拿產生的 zig-zag 路線去壓縮，不能壓縮頂點
                 const newSimplified = simplifyPath(stroke.originalPoints, tolerance);
                 stroke.simplifiedPoints = newSimplified;
                 stroke.distance = calculateDistance(newSimplified);
@@ -832,7 +915,6 @@
                     ? Math.round((1 - stroke.simplifiedPoints.length / stroke.originalPoints.length) * 100) 
                     : 0;
                 
-                // 區分名稱顯示
                 const displayName = stroke.isPolygon ? `Polygon ${i+1}` : `Path ${i+1}`;
 
                 list.innerHTML += `
@@ -931,17 +1013,11 @@
             const blob = new Blob([content], { type: 'application/gpx+xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = name; a.click();
+            a.href = url;
+            a.download = name;
+            a.click();
             URL.revokeObjectURL(url);
         }
     </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
