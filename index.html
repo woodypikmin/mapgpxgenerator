@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線，右側清單可直接選取路段進行獨立編輯或刪除</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，右側清單可直接選取路段進行獨立編輯或刪除</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -65,7 +65,7 @@
                     </div>
                     <input type="text" id="coordInput" 
                         class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono" 
-                        placeholder="輸入座標 (例: 24.729, 121.766) 按 Enter 定位（可連續搜尋多點）"
+                        placeholder="輸入座標 (例: 24.729, 121.766) 按 Enter 定位"
                         onkeypress="handleSearchEnter(event)">
                 </div>
                 <button onclick="searchCoordinate()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center gap-2">
@@ -74,7 +74,7 @@
             </div>
 
             <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between flex-wrap gap-2">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                     <div class="flex bg-gray-100 p-1 rounded-lg">
                         <button id="mode-move" onclick="setMainMode('move')" class="px-4 py-2 text-sm font-bold rounded-md bg-indigo-600 text-white shadow-sm transition-all flex items-center gap-1.5">
                             <i class="fas fa-hand-paper"></i> 1. 拖曳與選取
@@ -84,15 +84,18 @@
                         </button>
                     </div>
 
-                    <div id="draw-sub-modes" class="hidden flex bg-indigo-50 p-1 rounded-lg border border-indigo-100">
+                    <div id="draw-sub-modes" class="hidden flex bg-indigo-50 p-1 rounded-lg border border-indigo-100 flex-wrap gap-1">
                         <button id="submode-freehand" onclick="setSubMode('freehand')" class="px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all">
                             自由手繪
                         </button>
-                        <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
+                        <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
                             點擊連線
                         </button>
-                        <button id="submode-polygon" onclick="setSubMode('polygon')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
-                            <i class="fas fa-border-all"></i> 區域網格填滿
+                        <button id="submode-polygon" onclick="setSubMode('polygon')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
+                            <i class="fas fa-border-all"></i> 自訂多邊形網格
+                        </button>
+                        <button id="submode-shape" onclick="setSubMode('shape')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
+                            <i class="fas fa-shapes"></i> 幾何形狀產生
                         </button>
                     </div>
                 </div>
@@ -128,25 +131,56 @@
 
                 <div class="flex items-center gap-4 w-full bg-white p-3 rounded-lg border border-indigo-100 shadow-sm">
                     <label class="text-xs font-bold text-indigo-600 shrink-0">網格間距：</label>
-
-                    <!-- 滑桿保留常用範圍，方便細調；超過 1000m 可直接在右側數字框輸入 -->
-                    <input type="range" id="gridGapSlider"
-                        min="5" max="1000" step="5" value="20"
-                        class="flex-1"
-                        oninput="updateGridGapUI(this.value, false)">
-
+                    <input type="range" id="gridGapSlider" min="5" max="1000" step="5" value="20" class="flex-1" oninput="updateGridGapUI(this.value, false)">
                     <div class="flex items-center border border-indigo-200 rounded px-2 shrink-0 bg-indigo-50/50">
-                        <input type="number" id="gridGap"
-                            value="20" min="5" max="10000" step="5"
-                            class="w-20 text-center text-indigo-700 font-bold outline-none bg-transparent py-1 text-sm"
-                            oninput="updateGridGapUI(this.value, true)"
-                            onblur="normalizeGridGapInput()">
+                        <input type="number" id="gridGap" value="20" min="5" max="10000" step="5" class="w-20 text-center text-indigo-700 font-bold outline-none bg-transparent py-1 text-sm" oninput="updateGridGapUI(this.value, true)" onblur="normalizeGridGapInput()">
                         <span class="text-indigo-400 font-bold text-xs">m</span>
                     </div>
                 </div>
+            </div>
 
-                <div class="text-[10px] text-indigo-500 font-bold px-1">
-                    可設定 5m ～ 10000m；滑桿快速調整至 1000m，1000m 以上請直接輸入數值。
+            <!-- 幾何圖形控制面板 -->
+            <div id="shapeControls" class="hidden flex-col gap-3 bg-purple-50 border border-purple-200 p-4 rounded-xl animate-fade-in">
+                <div class="flex justify-between items-center w-full flex-wrap gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-bold text-purple-900 flex items-center gap-1">
+                            <i class="fas fa-shapes"></i> 選擇圖形：
+                        </span>
+                        <select id="shapeTypeSelect" onchange="onShapeParamsChanged()" class="bg-white border border-purple-300 rounded px-2 py-1 text-xs font-bold text-purple-800 outline-none">
+                            <option value="star">★ 五角星形</option>
+                            <option value="heart">♥ 愛心形狀</option>
+                            <option value="spiral">🌀 阿基米德螺旋</option>
+                            <option value="circle">● 圓形</option>
+                            <option value="square">■ 正方形</option>
+                            <option value="hexagon">⬡ 六邊形</option>
+                        </select>
+                        <span class="text-[11px] text-purple-600 ml-2">※ 點擊地圖放置中心，拖曳藍點可縮放、綠點可移動</span>
+                    </div>
+                    <button onclick="saveShapeGrid()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                        ✅ 儲存此圖形路線
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 w-full bg-white p-3 rounded-lg border border-purple-100 shadow-sm">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-bold text-purple-700 shrink-0">半徑大小：</label>
+                        <input type="range" id="shapeRadiusSlider" min="20" max="2000" step="10" value="150" class="flex-1" oninput="updateShapeRadiusUI(this.value, false)">
+                        <input type="number" id="shapeRadius" value="150" min="10" max="20000" class="w-16 text-center text-purple-800 font-bold border border-purple-200 rounded text-xs py-1" oninput="updateShapeRadiusUI(this.value, true)">
+                        <span class="text-xs text-purple-400 font-bold">m</span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-bold text-purple-700 shrink-0">填滿間距：</label>
+                        <input type="number" id="shapeGap" value="20" min="5" max="1000" step="5" class="w-20 text-center text-purple-800 font-bold border border-purple-200 rounded text-xs py-1" oninput="onShapeParamsChanged()">
+                        <span class="text-xs text-purple-400 font-bold">m</span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-bold text-purple-700 shrink-0">旋轉角度：</label>
+                        <input type="range" id="shapeRotationSlider" min="0" max="360" step="5" value="0" class="flex-1" oninput="document.getElementById('shapeRotation').value=this.value; onShapeParamsChanged()">
+                        <input type="number" id="shapeRotation" value="0" min="0" max="360" class="w-14 text-center text-purple-800 font-bold border border-purple-200 rounded text-xs py-1" oninput="document.getElementById('shapeRotationSlider').value=this.value; onShapeParamsChanged()">
+                        <span class="text-xs text-purple-400 font-bold">°</span>
+                    </div>
                 </div>
             </div>
 
@@ -243,10 +277,20 @@
         var polygonGridPolyline = null;
         var tempGridPoints = [];
 
+        // 幾何形狀變數
+        var shapeCenter = null;
+        var shapeRadiusMeters = 150;
+        var shapeCenterMarker = null;
+        var shapeRadiusMarker = null;
+        var shapeBoundaryLayer = null;
+        var shapeGridPolyline = null;
+        var tempShapePath = [];
+
         function setMainMode(newMode) {
-            if (mainMode === 'draw' && activeMarkers.length > 0) {
-                if (subMode === 'click') finishClickStroke();
+            if (mainMode === 'draw') {
+                if (subMode === 'click' && activeMarkers.length > 0) finishClickStroke();
                 if (subMode === 'polygon') clearPolygonTemp();
+                if (subMode === 'shape') clearShapeTemp();
             }
             if (mainMode === 'draw' && newMode !== 'draw') {
                 isDrawing = false;
@@ -263,6 +307,7 @@
                 document.getElementById('draw-sub-modes').classList.add('hidden');
                 document.getElementById('clickControls').classList.add('hidden');
                 document.getElementById('polygonControls').classList.add('hidden');
+                document.getElementById('shapeControls').classList.add('hidden');
                 
                 map.dragging.enable();
                 map.doubleClickZoom.enable();
@@ -285,25 +330,37 @@
             tempGridPoints = [];
         }
 
+        function clearShapeTemp() {
+            if (shapeCenterMarker) { map.removeLayer(shapeCenterMarker); shapeCenterMarker = null; }
+            if (shapeRadiusMarker) { map.removeLayer(shapeRadiusMarker); shapeRadiusMarker = null; }
+            if (shapeBoundaryLayer) { map.removeLayer(shapeBoundaryLayer); shapeBoundaryLayer = null; }
+            if (shapeGridPolyline) { map.removeLayer(shapeGridPolyline); shapeGridPolyline = null; }
+            shapeCenter = null;
+            tempShapePath = [];
+        }
+
         function setSubMode(newSubMode) {
             if (activeMarkers.length > 0 && subMode !== newSubMode) {
                 if (subMode === 'click') finishClickStroke();
                 if (subMode === 'polygon') clearPolygonTemp();
             }
+            if (subMode === 'shape' && newSubMode !== 'shape') {
+                clearShapeTemp();
+            }
 
             subMode = newSubMode;
             
             const activeSub = "px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all";
-            const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200";
+            const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all";
 
-            document.getElementById('submode-freehand').className = inactiveSub;
-            document.getElementById('submode-click').className = inactiveSub;
-            document.getElementById('submode-polygon').className = inactiveSub;
-            
-            document.getElementById('submode-' + subMode).className = activeSub;
+            ['freehand', 'click', 'polygon', 'shape'].forEach(m => {
+                const el = document.getElementById('submode-' + m);
+                if (el) el.className = (m === subMode) ? activeSub : inactiveSub;
+            });
 
             document.getElementById('clickControls').classList.add('hidden');
             document.getElementById('polygonControls').classList.add('hidden');
+            document.getElementById('shapeControls').classList.add('hidden');
 
             if (subMode === 'freehand') {
                 map.dragging.disable();
@@ -319,6 +376,12 @@
                 document.getElementById('polygonControls').style.display = 'flex';
                 map.dragging.enable(); 
                 map.doubleClickZoom.disable(); 
+                document.getElementById('map').classList.add('cursor-draw');
+            } else if (subMode === 'shape') {
+                document.getElementById('shapeControls').classList.remove('hidden');
+                document.getElementById('shapeControls').style.display = 'flex';
+                map.dragging.enable();
+                map.doubleClickZoom.disable();
                 document.getElementById('map').classList.add('cursor-draw');
             }
         }
@@ -336,9 +399,7 @@
             if (match) {
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[3]);
-                
                 map.flyTo([lat, lng], 17, { duration: 1.2 });
-                
                 const marker = L.marker([lat, lng]).addTo(map)
                     .bindPopup(`<b>搜尋點 ${searchMarkers.length + 1}</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
                 searchMarkers.push(marker);
@@ -382,9 +443,7 @@
             return simplified;
         }
 
-        // ==========================================
-        // 自由手繪模式
-        // ==========================================
+        // 自由手繪
         map.on('mousedown', function(e) {
             if (mainMode !== 'draw' || subMode !== 'freehand') return;
             isDrawing = true;
@@ -420,9 +479,7 @@
             }
         });
 
-        // ==========================================
-        // 點擊/多邊形 共用繪製邏輯
-        // ==========================================
+        // 點擊/多邊形
         function updateActiveLine(isDragging = false) {
             if (!isDragging) {
                 activeMarkers.forEach((m, index) => {
@@ -475,30 +532,34 @@
         }
 
         map.on('click', function(e) {
-            if (mainMode !== 'draw' || (subMode !== 'click' && subMode !== 'polygon')) return;
+            if (mainMode !== 'draw') return;
             
-            const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
-            marker._nodeIndex = -1; 
-            activeMarkers.push(marker);
+            if (subMode === 'click' || subMode === 'polygon') {
+                const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+                marker._nodeIndex = -1; 
+                activeMarkers.push(marker);
 
-            marker.on('drag', function() { updateActiveLine(true); });
-            marker.on('dragend', function() { updateActiveLine(false); });
+                marker.on('drag', function() { updateActiveLine(true); });
+                marker.on('dragend', function() { updateActiveLine(false); });
 
-            marker.on('click', function(ev) {
-                L.DomEvent.stopPropagation(ev); 
-                const idx = activeMarkers.indexOf(marker);
-                L.popup({ offset: [0, -10], closeButton: false })
-                    .setLatLng(marker.getLatLng())
-                    .setContent(`
-                        <div class="text-center p-1">
-                            <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${idx + 1}</p>
-                            <button onclick="deleteActiveMarker(${idx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
-                        </div>
-                    `)
-                    .openOn(map);
-            });
+                marker.on('click', function(ev) {
+                    L.DomEvent.stopPropagation(ev); 
+                    const idx = activeMarkers.indexOf(marker);
+                    L.popup({ offset: [0, -10], closeButton: false })
+                        .setLatLng(marker.getLatLng())
+                        .setContent(`
+                            <div class="text-center p-1">
+                                <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${idx + 1}</p>
+                                <button onclick="deleteActiveMarker(${idx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
+                            </div>
+                        `)
+                        .openOn(map);
+                });
 
-            updateActiveLine(false);
+                updateActiveLine(false);
+            } else if (subMode === 'shape') {
+                initOrMoveShape(e.latlng);
+            }
         });
 
         window.finishClickStroke = function() {
@@ -518,9 +579,250 @@
         }
 
         // ==========================================
+        // 幾何形狀產生器核心算法
+        // ==========================================
+        function meterOffsetToLatLng(originLat, originLng, dxMeters, dyMeters) {
+            const latDeg = dyMeters / 111320;
+            const lngDeg = dxMeters / (111320 * Math.cos(originLat * Math.PI / 180));
+            return [originLat + latDeg, originLng + lngDeg];
+        }
+
+        function rotatePoint(x, y, angleDeg) {
+            const rad = angleDeg * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            return [x * cos - y * sin, x * sin + y * cos];
+        }
+
+        function generateShapeBoundary(centerLat, centerLng, radius, shapeType, rotDeg) {
+            let pts = [];
+            if (shapeType === 'star') {
+                const pointsCount = 5;
+                const innerRadius = radius * 0.42;
+                for (let i = 0; i < pointsCount * 2; i++) {
+                    const r = (i % 2 === 0) ? radius : innerRadius;
+                    const angle = (i * Math.PI / pointsCount) - Math.PI / 2;
+                    let x = r * Math.cos(angle);
+                    let y = r * Math.sin(angle);
+                    let [rx, ry] = rotatePoint(x, y, rotDeg);
+                    pts.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+                }
+            } else if (shapeType === 'heart') {
+                const step = Math.PI / 36;
+                const scale = radius / 17;
+                for (let t = 0; t <= Math.PI * 2 + 0.001; t += step) {
+                    let x = 16 * Math.pow(Math.sin(t), 3);
+                    let y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+                    x *= scale;
+                    y *= scale;
+                    let [rx, ry] = rotatePoint(x, y, rotDeg);
+                    pts.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+                }
+            } else if (shapeType === 'circle') {
+                const sides = 48;
+                for (let i = 0; i < sides; i++) {
+                    const angle = (i * 2 * Math.PI) / sides;
+                    let x = radius * Math.cos(angle);
+                    let y = radius * Math.sin(angle);
+                    let [rx, ry] = rotatePoint(x, y, rotDeg);
+                    pts.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+                }
+            } else if (shapeType === 'square') {
+                const sides = 4;
+                for (let i = 0; i < sides; i++) {
+                    const angle = (i * 2 * Math.PI) / sides + (Math.PI / 4);
+                    let x = radius * Math.cos(angle);
+                    let y = radius * Math.sin(angle);
+                    let [rx, ry] = rotatePoint(x, y, rotDeg);
+                    pts.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+                }
+            } else if (shapeType === 'hexagon') {
+                const sides = 6;
+                for (let i = 0; i < sides; i++) {
+                    const angle = (i * 2 * Math.PI) / sides;
+                    let x = radius * Math.cos(angle);
+                    let y = radius * Math.sin(angle);
+                    let [rx, ry] = rotatePoint(x, y, rotDeg);
+                    pts.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+                }
+            }
+            return pts;
+        }
+
+        function generateArchimedeanSpiral(centerLat, centerLng, maxRadius, gap, rotDeg) {
+            let path = [];
+            const b = gap / (2 * Math.PI);
+            const totalTheta = maxRadius / b;
+            const thetaStep = 0.1;
+            
+            for (let theta = 0; theta <= totalTheta; theta += thetaStep) {
+                let r = b * theta;
+                let x = r * Math.cos(theta);
+                let y = r * Math.sin(theta);
+                let [rx, ry] = rotatePoint(x, y, rotDeg);
+                path.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
+            }
+            return path;
+        }
+
+        function initOrMoveShape(latlng) {
+            shapeCenter = latlng;
+            shapeRadiusMeters = parseFloat(document.getElementById('shapeRadius').value) || 150;
+
+            if (!shapeCenterMarker) {
+                const centerIcon = L.divIcon({
+                    className: 'shape-center-icon',
+                    html: `<div class='bg-emerald-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-black border-2 border-white shadow-xl cursor-move hover:scale-110 transition-transform'><i class="fas fa-arrows-alt"></i></div>`,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+                shapeCenterMarker = L.marker(shapeCenter, { draggable: true, icon: centerIcon }).addTo(map);
+
+                shapeCenterMarker.on('drag', function(e) {
+                    shapeCenter = e.target.getLatLng();
+                    updateShapeRadiusMarkerPos();
+                    renderShapePreview();
+                });
+            } else {
+                shapeCenterMarker.setLatLng(shapeCenter);
+            }
+
+            if (!shapeRadiusMarker) {
+                const radiusIcon = L.divIcon({
+                    className: 'shape-radius-icon',
+                    html: `<div class='bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black border-2 border-white shadow-xl cursor-ew-resize hover:scale-110 transition-transform'><i class="fas fa-arrows-alt-h"></i></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                shapeRadiusMarker = L.marker(getHandleLatLng(shapeCenter, shapeRadiusMeters), { draggable: true, icon: radiusIcon }).addTo(map);
+
+                shapeRadiusMarker.on('drag', function(e) {
+                    const handleLatLng = e.target.getLatLng();
+                    shapeRadiusMeters = Math.max(10, shapeCenter.distanceTo(handleLatLng));
+                    document.getElementById('shapeRadius').value = Math.round(shapeRadiusMeters);
+                    document.getElementById('shapeRadiusSlider').value = Math.min(2000, Math.round(shapeRadiusMeters));
+                    renderShapePreview();
+                });
+            } else {
+                updateShapeRadiusMarkerPos();
+            }
+
+            renderShapePreview();
+        }
+
+        function getHandleLatLng(center, radius) {
+            return L.latLng(meterOffsetToLatLng(center.lat, center.lng, radius, 0));
+        }
+
+        function updateShapeRadiusMarkerPos() {
+            if (shapeCenter && shapeRadiusMarker) {
+                shapeRadiusMarker.setLatLng(getHandleLatLng(shapeCenter, shapeRadiusMeters));
+            }
+        }
+
+        window.updateShapeRadiusUI = function(val, fromInput) {
+            const v = Math.max(10, parseFloat(val) || 10);
+            shapeRadiusMeters = v;
+            if (fromInput) {
+                document.getElementById('shapeRadiusSlider').value = Math.min(2000, v);
+            } else {
+                document.getElementById('shapeRadius').value = Math.round(v);
+            }
+            updateShapeRadiusMarkerPos();
+            renderShapePreview();
+        };
+
+        window.onShapeParamsChanged = function() {
+            renderShapePreview();
+        };
+
+        function renderShapePreview() {
+            if (!shapeCenter) return;
+            const shapeType = document.getElementById('shapeTypeSelect').value;
+            const gap = Math.max(5, parseFloat(document.getElementById('shapeGap').value) || 20);
+            const rot = parseFloat(document.getElementById('shapeRotation').value) || 0;
+
+            if (shapeType === 'spiral') {
+                if (shapeBoundaryLayer) { map.removeLayer(shapeBoundaryLayer); shapeBoundaryLayer = null; }
+                const spiralPoints = generateArchimedeanSpiral(shapeCenter.lat, shapeCenter.lng, shapeRadiusMeters, gap, rot);
+                tempShapePath = spiralPoints;
+
+                if (!shapeGridPolyline) {
+                    shapeGridPolyline = L.polyline(spiralPoints, {color: '#8b5cf6', weight: 4}).addTo(map);
+                } else {
+                    shapeGridPolyline.setLatLngs(spiralPoints);
+                }
+            } else {
+                const boundaryPts = generateShapeBoundary(shapeCenter.lat, shapeCenter.lng, shapeRadiusMeters, shapeType, rot);
+                
+                if (!shapeBoundaryLayer) {
+                    shapeBoundaryLayer = L.polygon(boundaryPts, {color: '#8b5cf6', fillColor: '#8b5cf6', fillOpacity: 0.15, weight: 2, dashArray: '4, 4'}).addTo(map);
+                } else {
+                    shapeBoundaryLayer.setLatLngs(boundaryPts);
+                }
+
+                // 填滿掃描線運算
+                let minLat = Infinity, maxLat = -Infinity;
+                boundaryPts.forEach(p => {
+                    if (p[0] < minLat) minLat = p[0];
+                    if (p[0] > maxLat) maxLat = p[0];
+                });
+
+                const latStep = gap / 111320;
+                let scanLatitudes = [];
+                let currentLat = maxLat - latStep / 2;
+                while (currentLat > minLat) {
+                    scanLatitudes.push(currentLat);
+                    currentLat -= latStep;
+                }
+
+                let path = [];
+                let leftToRight = true;
+                scanLatitudes.forEach(cLat => {
+                    const rowSegments = getPolygonRowSegments(boundaryPts, cLat);
+                    if (rowSegments.length > 0) {
+                        if (leftToRight) {
+                            for (let k = 0; k < rowSegments.length; k++) {
+                                path.push([cLat, rowSegments[k][0]]);
+                                path.push([cLat, rowSegments[k][1]]);
+                            }
+                        } else {
+                            for (let k = rowSegments.length - 1; k >= 0; k--) {
+                                path.push([cLat, rowSegments[k][1]]);
+                                path.push([cLat, rowSegments[k][0]]);
+                            }
+                        }
+                        leftToRight = !leftToRight;
+                    }
+                });
+
+                tempShapePath = path;
+
+                if (!shapeGridPolyline) {
+                    shapeGridPolyline = L.polyline(path, {color: '#6366f1', weight: 4}).addTo(map);
+                } else {
+                    shapeGridPolyline.setLatLngs(path);
+                }
+            }
+        }
+
+        window.saveShapeGrid = function() {
+            if (mainMode !== 'draw' || subMode !== 'shape' || tempShapePath.length === 0) {
+                return alert("請先在地圖上點擊產生幾何圖形！");
+            }
+
+            currentStrokePoints = tempShapePath;
+            currentPolyline = shapeGridPolyline;
+
+            shapeGridPolyline = null;
+            tempShapePath = [];
+            clearShapeTemp();
+            saveStrokeToHistory(false);
+        };
+
+        // ==========================================
         // 多邊形網格預覽與儲存
         // ==========================================
-
         function clampGridGap(value) {
             const n = parseFloat(value);
             if (!Number.isFinite(n)) return null;
@@ -530,17 +832,10 @@
         window.updateGridGapUI = function(val, fromInput) {
             const value = clampGridGap(val);
             if (value === null) return;
-
             const slider = document.getElementById('gridGapSlider');
             const input = document.getElementById('gridGap');
-
-            if (fromInput) {
-                // 數字框允許到 10000m；滑桿超過 1000m 時停在最右端即可
-                slider.value = Math.min(value, parseFloat(slider.max));
-            } else {
-                input.value = value;
-            }
-
+            if (fromInput) slider.value = Math.min(value, parseFloat(slider.max));
+            else input.value = value;
             previewPolygonGrid();
         }
 
@@ -548,7 +843,6 @@
             const input = document.getElementById('gridGap');
             const slider = document.getElementById('gridGapSlider');
             const value = clampGridGap(input.value);
-
             if (value === null) {
                 input.value = 20;
                 slider.value = 20;
@@ -556,18 +850,14 @@
                 input.value = value;
                 slider.value = Math.min(value, parseFloat(slider.max));
             }
-
             previewPolygonGrid();
         }
 
-        // 計算某一條緯度掃描線與多邊形的所有交點區段
         function getPolygonRowSegments(points, currentLat) {
             let intersections = [];
-
             for (let i = 0; i < points.length; i++) {
                 let p1 = points[i];
                 let p2 = points[(i + 1) % points.length];
-
                 let y1 = p1[0], x1 = p1[1];
                 let y2 = p2[0], x2 = p2[1];
 
@@ -578,18 +868,15 @@
             }
 
             intersections.sort((a, b) => a - b);
-
             let rowSegments = [];
             for (let k = 0; k < intersections.length - 1; k += 2) {
                 rowSegments.push([intersections[k], intersections[k + 1]]);
             }
-
             return rowSegments;
         }
 
         window.previewPolygonGrid = function() {
             if (mainMode !== 'draw' || subMode !== 'polygon') return;
-
             if (activeMarkers.length < 3) {
                 if (polygonGridPolyline) {
                     map.removeLayer(polygonGridPolyline);
@@ -601,7 +888,6 @@
 
             const gapInput = document.getElementById('gridGap').value;
             const gapMeters = clampGridGap(gapInput) ?? 20;
-
             const points = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
             
             let minLat = Infinity, maxLat = -Infinity;
@@ -614,12 +900,9 @@
             const polygonHeightMeters = Math.max(0, (maxLat - minLat) * 111320);
 
             let scanLatitudes = [];
-
-            // ★ 如果設定間距大於或等於區域高度，至少在中央產生一條掃描線
             if (polygonHeightMeters <= gapMeters) {
                 scanLatitudes.push((maxLat + minLat) / 2);
             } else {
-                // ★ 從區域內部半格處開始，避免剛好落在最頂邊造成沒有交點
                 let currentLat = maxLat - latStep / 2;
                 while (currentLat > minLat) {
                     scanLatitudes.push(currentLat);
@@ -632,7 +915,6 @@
 
             scanLatitudes.forEach(currentLat => {
                 const rowSegments = getPolygonRowSegments(points, currentLat);
-
                 if (rowSegments.length > 0) {
                     if (leftToRight) {
                         for (let k = 0; k < rowSegments.length; k++) {
@@ -648,17 +930,6 @@
                     leftToRight = !leftToRight;
                 }
             });
-
-            // ★ 極端情況保底：若前面仍沒有產生任何線，再嘗試多邊形中央緯度一次
-            if (path.length === 0) {
-                const centerLat = (maxLat + minLat) / 2;
-                const fallbackSegments = getPolygonRowSegments(points, centerLat);
-
-                fallbackSegments.forEach(seg => {
-                    path.push([centerLat, seg[0]]);
-                    path.push([centerLat, seg[1]]);
-                });
-            }
 
             tempGridPoints = path;
 
@@ -683,20 +954,17 @@
             
             currentStrokePoints = tempGridPoints;
             currentPolyline = polygonGridPolyline;
-            
-            // 紀錄多邊形的頂點與當時設定的間距，以便未來編輯還原
             const vertices = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
             const savedGap = clampGridGap(document.getElementById('gridGap').value) ?? 20;
 
             polygonGridPolyline = null;
             tempGridPoints = [];
-            
             clearPolygonTemp();
             saveStrokeToHistory(true, vertices, savedGap);
         };
 
         // ==========================================
-        // 路線存檔與點擊互動 (清單按鈕連動)
+        // 路線存檔與 UI 更新
         // ==========================================
         function saveStrokeToHistory(isPolygon = false, polyVertices = [], gridGap = 20) {
             const currentTolerance = parseInt(document.getElementById('simplifySlider').value);
@@ -754,26 +1022,24 @@
             }
         };
 
-        // 編輯邏輯：能夠還原多邊形網格與最高 10000m 的間距
         window.editSavedStrokeByLayerId = function(id) {
             const idx = allStrokes.findIndex(s => s.polyline._leaflet_id == id);
             if (idx !== -1) {
                 const stroke = allStrokes[idx];
                 
-                if (mainMode === 'draw' && activeMarkers.length > 0) {
-                    if (subMode === 'click') finishClickStroke();
+                if (mainMode === 'draw') {
+                    if (subMode === 'click' && activeMarkers.length > 0) finishClickStroke();
                     if (subMode === 'polygon') clearPolygonTemp();
+                    if (subMode === 'shape') clearShapeTemp();
                 }
                 
                 map.removeLayer(stroke.polyline);
                 allStrokes.splice(idx, 1);
                 map.closePopup();
-                
                 setMainMode('draw');
                 
                 if (stroke.isPolygon) {
                     setSubMode('polygon');
-
                     const restoredGap = clampGridGap(stroke.gridGap) ?? 20;
                     const slider = document.getElementById('gridGapSlider');
                     document.getElementById('gridGap').value = restoredGap;
@@ -783,7 +1049,6 @@
                         const marker = L.marker(p, { draggable: true }).addTo(map);
                         marker._nodeIndex = -1;
                         activeMarkers.push(marker);
-
                         marker.on('drag', function() { updateActiveLine(true); });
                         marker.on('dragend', function() { updateActiveLine(false); });
                         marker.on('click', function(ev) {
@@ -796,8 +1061,7 @@
                                         <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${mIdx + 1}</p>
                                         <button onclick="deleteActiveMarker(${mIdx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
                                     </div>
-                                `)
-                                .openOn(map);
+                                `).openOn(map);
                         });
                     });
                 } else {
@@ -806,7 +1070,6 @@
                         const marker = L.marker(p, { draggable: true }).addTo(map);
                         marker._nodeIndex = -1;
                         activeMarkers.push(marker);
-
                         marker.on('drag', function() { updateActiveLine(true); });
                         marker.on('dragend', function() { updateActiveLine(false); });
                         marker.on('click', function(ev) {
@@ -819,8 +1082,7 @@
                                         <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${mIdx + 1}</p>
                                         <button onclick="deleteActiveMarker(${mIdx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
                                     </div>
-                                `)
-                                .openOn(map);
+                                `).openOn(map);
                         });
                     });
                 }
@@ -830,9 +1092,6 @@
             }
         };
 
-        // ==========================================
-        // 基礎控制與下載
-        // ==========================================
         window.applySimplification = function() {
             const tolerance = parseInt(document.getElementById('simplifySlider').value);
             document.getElementById('toleranceDisplay').innerText = `容差: ${tolerance}m`;
@@ -858,6 +1117,10 @@
                 updateActiveLine(false);
                 return;
             }
+            if (mainMode === 'draw' && subMode === 'shape' && shapeCenter) {
+                clearShapeTemp();
+                return;
+            }
 
             if (allStrokes.length === 0) return;
             const removedStroke = allStrokes.pop();
@@ -870,6 +1133,7 @@
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
             clearPolygonTemp();
+            clearShapeTemp();
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
             searchMarkers.forEach(m => map.removeLayer(m));
@@ -954,7 +1218,6 @@
         window.downloadTRK = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
-            
             const customNameInput = document.getElementById('fileNameInput').value.trim();
             const baseFileName = customNameInput ? customNameInput : `Export_${new Date().getTime()}`;
             
@@ -980,7 +1243,6 @@
         window.downloadWPT = function(separate) {
             if (allStrokes.length === 0) return;
             const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX_Route_Generator" xmlns="http://www.topografix.com/GPX/1/1">\n`;
-            
             const customNameInput = document.getElementById('fileNameInput').value.trim();
             const baseFileName = customNameInput ? customNameInput : `Export_${new Date().getTime()}`;
 
