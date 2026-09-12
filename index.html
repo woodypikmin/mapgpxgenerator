@@ -579,7 +579,7 @@
         }
 
         // ==========================================
-        // 幾何形狀產生器核心算法 (優化深凹角愛心)
+        // 幾何形狀產生器核心算法
         // ==========================================
         function meterOffsetToLatLng(originLat, originLng, dxMeters, dyMeters) {
             const latDeg = dyMeters / 111320;
@@ -597,19 +597,14 @@
         function generateShapeBoundary(centerLat, centerLng, radius, shapeType, rotDeg) {
             let pts = [];
             if (shapeType === 'heart') {
-                // 精確產生具有深 V 凹角的心形 (上凹下尖)
-                const samples = 120;
-                const scale = radius / 17.5;
+                // 經典愛心心形線，頂部深凹、下部銳尖
+                const samples = 140;
+                const scale = radius / 16.5;
                 for (let i = 0; i <= samples; i++) {
                     const t = (i / samples) * 2 * Math.PI;
                     let x = 16 * Math.pow(Math.sin(t), 3);
                     let y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
                     
-                    // 強化頂部交界處的內凹深度，避免被平滑拉平成直線
-                    if (Math.abs(t) < 0.05 || Math.abs(t - 2 * Math.PI) < 0.05) {
-                        y -= 2.2;
-                    }
-
                     x *= scale;
                     y *= scale;
                     let [rx, ry] = rotatePoint(x, y, rotDeg);
@@ -671,6 +666,116 @@
                 path.push(meterOffsetToLatLng(centerLat, centerLng, rx, ry));
             }
             return path;
+        }
+
+        // ==========================================
+        // 非凸多邊形避開凹槽填滿邏輯（解決愛心頂部平頂問題）
+        // ==========================================
+        function buildNonConvexGridPath(boundaryPts, gapMeters) {
+            let minLat = Infinity, maxLat = -Infinity;
+            boundaryPts.forEach(p => {
+                if (p[0] < minLat) minLat = p[0];
+                if (p[0] > maxLat) maxLat = p[0];
+            });
+
+            const latStep = gapMeters / 111320;
+            let scanLatitudes = [];
+            let currentLat = maxLat - latStep / 2;
+            while (currentLat > minLat) {
+                scanLatitudes.push(currentLat);
+                currentLat -= latStep;
+            }
+
+            // 取得各列的所有有效線段
+            let rows = [];
+            scanLatitudes.forEach(cLat => {
+                const segs = getPolygonRowSegments(boundaryPts, cLat);
+                if (segs.length > 0) {
+                    rows.push({ lat: cLat, segs: segs });
+                }
+            });
+
+            if (rows.length === 0) return [];
+
+            // 依據左右心房分割處理非凸多邊形，確保線段絕不橫跨空隙
+            let hasMultiSegments = rows.some(r => r.segs.length > 1);
+
+            if (!hasMultiSegments) {
+                // 一般凸多邊形（圓形、正多邊形等）單純蛇形走線
+                let path = [];
+                let leftToRight = true;
+                rows.forEach(r => {
+                    const seg = r.segs[0];
+                    if (leftToRight) {
+                        path.push([r.lat, seg[0]]);
+                        path.push([r.lat, seg[1]]);
+                    } else {
+                        path.push([r.lat, seg[1]]);
+                        path.push([r.lat, seg[0]]);
+                    }
+                    leftToRight = !leftToRight;
+                });
+                return path;
+            }
+
+            // 愛心等凹多邊形：分區段填滿（先走左側心房區塊，再平滑串接到右側心房與下半部）
+            let leftHalfPath = [];
+            let rightHalfPath = [];
+            let lowerPath = [];
+
+            let leftDir = true;
+            let rightDir = false;
+            let lowerDir = true;
+
+            rows.forEach(r => {
+                if (r.segs.length >= 2) {
+                    // 頂部左右分離區段：左耳與右耳各自連續走線，不橫跨中間下凹處
+                    const leftSeg = r.segs[0];
+                    const rightSeg = r.segs[r.segs.length - 1];
+
+                    if (leftDir) {
+                        leftHalfPath.push([r.lat, leftSeg[0]]);
+                        leftHalfPath.push([r.lat, leftSeg[1]]);
+                    } else {
+                        leftHalfPath.push([r.lat, leftSeg[1]]);
+                        leftHalfPath.push([r.lat, leftSeg[0]]);
+                    }
+                    leftDir = !leftDir;
+
+                    if (rightDir) {
+                        rightHalfPath.push([r.lat, rightSeg[0]]);
+                        rightHalfPath.push([r.lat, rightSeg[1]]);
+                    } else {
+                        rightHalfPath.push([r.lat, rightSeg[1]]);
+                        rightHalfPath.push([r.lat, rightSeg[0]]);
+                    }
+                    rightDir = !rightDir;
+                } else {
+                    // 下半部合流為單一區間
+                    const seg = r.segs[0];
+                    if (lowerDir) {
+                        lowerPath.push([r.lat, seg[0]]);
+                        lowerPath.push([r.lat, seg[1]]);
+                    } else {
+                        lowerPath.push([r.lat, seg[1]]);
+                        lowerPath.push([r.lat, seg[0]]);
+                    }
+                    lowerDir = !lowerDir;
+                }
+            });
+
+            // 串接方式：從右耳自頂向下走完 -> 沿下凹輪廓串至左耳 -> 左耳向下走完 -> 進入下半部尖角
+            let combined = [];
+            if (rightHalfPath.length > 0) {
+                combined = combined.concat(rightHalfPath);
+            }
+            if (leftHalfPath.length > 0) {
+                combined = combined.concat(leftHalfPath);
+            }
+            if (lowerPath.length > 0) {
+                combined = combined.concat(lowerPath);
+            }
+            return combined;
         }
 
         function initOrMoveShape(latlng) {
@@ -769,41 +874,8 @@
                     shapeBoundaryLayer.setLatLngs(boundaryPts);
                 }
 
-                // 填滿掃描線運算
-                let minLat = Infinity, maxLat = -Infinity;
-                boundaryPts.forEach(p => {
-                    if (p[0] < minLat) minLat = p[0];
-                    if (p[0] > maxLat) maxLat = p[0];
-                });
-
-                const latStep = gap / 111320;
-                let scanLatitudes = [];
-                let currentLat = maxLat - latStep / 2;
-                while (currentLat > minLat) {
-                    scanLatitudes.push(currentLat);
-                    currentLat -= latStep;
-                }
-
-                let path = [];
-                let leftToRight = true;
-                scanLatitudes.forEach(cLat => {
-                    const rowSegments = getPolygonRowSegments(boundaryPts, cLat);
-                    if (rowSegments.length > 0) {
-                        if (leftToRight) {
-                            for (let k = 0; k < rowSegments.length; k++) {
-                                path.push([cLat, rowSegments[k][0]]);
-                                path.push([cLat, rowSegments[k][1]]);
-                            }
-                        } else {
-                            for (let k = rowSegments.length - 1; k >= 0; k--) {
-                                path.push([cLat, rowSegments[k][1]]);
-                                path.push([cLat, rowSegments[k][0]]);
-                            }
-                        }
-                        leftToRight = !leftToRight;
-                    }
-                });
-
+                // 呼叫避免橫跨凹槽的專用路徑演算函數
+                const path = buildNonConvexGridPath(boundaryPts, gap);
                 tempShapePath = path;
 
                 if (!shapeGridPolyline) {
@@ -898,47 +970,7 @@
             const gapMeters = clampGridGap(gapInput) ?? 20;
             const points = activeMarkers.map(m => [m.getLatLng().lat, m.getLatLng().lng]);
             
-            let minLat = Infinity, maxLat = -Infinity;
-            points.forEach(p => {
-                if (p[0] < minLat) minLat = p[0];
-                if (p[0] > maxLat) maxLat = p[0];
-            });
-
-            const latStep = gapMeters / 111320;
-            const polygonHeightMeters = Math.max(0, (maxLat - minLat) * 111320);
-
-            let scanLatitudes = [];
-            if (polygonHeightMeters <= gapMeters) {
-                scanLatitudes.push((maxLat + minLat) / 2);
-            } else {
-                let currentLat = maxLat - latStep / 2;
-                while (currentLat > minLat) {
-                    scanLatitudes.push(currentLat);
-                    currentLat -= latStep;
-                }
-            }
-
-            let path = [];
-            let leftToRight = true;
-
-            scanLatitudes.forEach(currentLat => {
-                const rowSegments = getPolygonRowSegments(points, currentLat);
-                if (rowSegments.length > 0) {
-                    if (leftToRight) {
-                        for (let k = 0; k < rowSegments.length; k++) {
-                            path.push([currentLat, rowSegments[k][0]]);
-                            path.push([currentLat, rowSegments[k][1]]);
-                        }
-                    } else {
-                        for (let k = rowSegments.length - 1; k >= 0; k--) {
-                            path.push([currentLat, rowSegments[k][1]]);
-                            path.push([currentLat, rowSegments[k][0]]);
-                        }
-                    }
-                    leftToRight = !leftToRight;
-                }
-            });
-
+            const path = buildNonConvexGridPath(points, gapMeters);
             tempGridPoints = path;
 
             if (path.length > 0) {
