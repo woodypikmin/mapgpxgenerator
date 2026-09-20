@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，右側清單可直接選取路段進行獨立編輯或刪除</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，支援匯入既有 GPX 提取極端輪廓自動生成網格</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -100,7 +100,17 @@
                     </div>
                 </div>
 
-                <div class="flex gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <!-- 匯入既有 GPX 區塊 -->
+                    <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
+                        <label class="text-xs font-bold text-gray-600 pl-1">錨點數:</label>
+                        <input type="number" id="maxAnchorCount" value="20" min="3" max="50" class="w-12 text-center border border-gray-300 rounded text-xs py-1 font-bold outline-none">
+                        <label class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-sm">
+                            <i class="fas fa-file-import"></i> 匯入 GPX
+                            <input type="file" id="gpxFileInput" accept=".gpx" class="hidden" onchange="handleGPXUpload(event)">
+                        </label>
+                    </div>
+
                     <button onclick="undoLastStroke()" class="text-orange-500 hover:bg-orange-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors">
                         <i class="fas fa-undo"></i> 撤銷
                     </button>
@@ -122,7 +132,7 @@
             <div id="polygonControls" class="hidden flex-col gap-3 bg-indigo-50 border border-indigo-200 p-4 rounded-xl animate-fade-in">
                 <div class="flex justify-between items-center w-full">
                     <span class="text-sm font-bold text-indigo-800 flex items-center gap-2">
-                        <i class="fas fa-draw-polygon"></i> 多邊形網格 (點擊 3 個頂點即可預覽)
+                        <i class="fas fa-draw-polygon"></i> 多邊形網格 (標記 3 個頂點即可自動生成填滿路線)
                     </span>
                     <button onclick="savePolygonGrid()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
                         ✅ 儲存此網格
@@ -597,7 +607,6 @@
         function generateShapeBoundary(centerLat, centerLng, radius, shapeType, rotDeg) {
             let pts = [];
             if (shapeType === 'heart') {
-                // 經典愛心心形線，頂部深凹、下部銳尖
                 const samples = 140;
                 const scale = radius / 16.5;
                 for (let i = 0; i <= samples; i++) {
@@ -669,7 +678,7 @@
         }
 
         // ==========================================
-        // 非凸多邊形避開凹槽填滿邏輯（解決愛心頂部平頂問題）
+        // 非凸多邊形避開凹槽填滿邏輯
         // ==========================================
         function buildNonConvexGridPath(boundaryPts, gapMeters) {
             let minLat = Infinity, maxLat = -Infinity;
@@ -686,7 +695,6 @@
                 currentLat -= latStep;
             }
 
-            // 取得各列的所有有效線段
             let rows = [];
             scanLatitudes.forEach(cLat => {
                 const segs = getPolygonRowSegments(boundaryPts, cLat);
@@ -697,11 +705,9 @@
 
             if (rows.length === 0) return [];
 
-            // 依據左右心房分割處理非凸多邊形，確保線段絕不橫跨空隙
             let hasMultiSegments = rows.some(r => r.segs.length > 1);
 
             if (!hasMultiSegments) {
-                // 一般凸多邊形（圓形、正多邊形等）單純蛇形走線
                 let path = [];
                 let leftToRight = true;
                 rows.forEach(r => {
@@ -718,7 +724,6 @@
                 return path;
             }
 
-            // 愛心等凹多邊形：分區段填滿（先走左側心房區塊，再平滑串接到右側心房與下半部）
             let leftHalfPath = [];
             let rightHalfPath = [];
             let lowerPath = [];
@@ -729,7 +734,6 @@
 
             rows.forEach(r => {
                 if (r.segs.length >= 2) {
-                    // 頂部左右分離區段：左耳與右耳各自連續走線，不橫跨中間下凹處
                     const leftSeg = r.segs[0];
                     const rightSeg = r.segs[r.segs.length - 1];
 
@@ -751,7 +755,6 @@
                     }
                     rightDir = !rightDir;
                 } else {
-                    // 下半部合流為單一區間
                     const seg = r.segs[0];
                     if (lowerDir) {
                         lowerPath.push([r.lat, seg[0]]);
@@ -764,17 +767,10 @@
                 }
             });
 
-            // 串接方式：從右耳自頂向下走完 -> 沿下凹輪廓串至左耳 -> 左耳向下走完 -> 進入下半部尖角
             let combined = [];
-            if (rightHalfPath.length > 0) {
-                combined = combined.concat(rightHalfPath);
-            }
-            if (leftHalfPath.length > 0) {
-                combined = combined.concat(leftHalfPath);
-            }
-            if (lowerPath.length > 0) {
-                combined = combined.concat(lowerPath);
-            }
+            if (rightHalfPath.length > 0) combined = combined.concat(rightHalfPath);
+            if (leftHalfPath.length > 0) combined = combined.concat(leftHalfPath);
+            if (lowerPath.length > 0) combined = combined.concat(lowerPath);
             return combined;
         }
 
@@ -874,7 +870,6 @@
                     shapeBoundaryLayer.setLatLngs(boundaryPts);
                 }
 
-                // 呼叫避免橫跨凹槽的專用路徑演算函數
                 const path = buildNonConvexGridPath(boundaryPts, gap);
                 tempShapePath = path;
 
@@ -1002,6 +997,116 @@
             clearPolygonTemp();
             saveStrokeToHistory(true, vertices, savedGap);
         };
+
+        // ==========================================
+        // GPX 匯入與 360 度極值輪廓分析演算法
+        // ==========================================
+        function handleGPXUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const xmlText = e.target.result;
+                processImportedGPX(xmlText);
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function processImportedGPX(xmlText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+            
+            let rawElements = Array.from(xmlDoc.querySelectorAll("trkpt"));
+            if (rawElements.length === 0) {
+                rawElements = Array.from(xmlDoc.querySelectorAll("wpt"));
+            }
+
+            if (rawElements.length < 3) {
+                alert("GPX 檔案內的座標不足 3 點，無法建構多邊形！");
+                return;
+            }
+
+            const allPoints = rawElements.map(el => [
+                parseFloat(el.getAttribute("lat")),
+                parseFloat(el.getAttribute("lon"))
+            ]).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+
+            const maxPoints = Math.max(3, Math.min(50, parseInt(document.getElementById('maxAnchorCount').value) || 20));
+            const anchorPoints = extractExtremeBoundaryPoints(allPoints, maxPoints);
+
+            if (anchorPoints.length < 3) {
+                alert("無法解析足夠的外廓特徵錨點！");
+                return;
+            }
+
+            loadAnchorsToPolygonMode(anchorPoints);
+        }
+
+        function extractExtremeBoundaryPoints(points, maxCount) {
+            let sumLat = 0, sumLng = 0;
+            points.forEach(p => { sumLat += p[0]; sumLng += p[1]; });
+            const cLat = sumLat / points.length;
+            const cLng = sumLng / points.length;
+
+            const sectors = Array.from({ length: maxCount }, () => null);
+            const sectorAngle = (2 * Math.PI) / maxCount;
+
+            points.forEach(p => {
+                const dLat = p[0] - cLat;
+                const dLng = (p[1] - cLng) * Math.cos(cLat * Math.PI / 180);
+                let angle = Math.atan2(dLat, dLng);
+                if (angle < 0) angle += 2 * Math.PI;
+
+                const sectorIdx = Math.min(maxCount - 1, Math.floor(angle / sectorAngle));
+                const distSq = dLat * dLat + dLng * dLng;
+
+                if (!sectors[sectorIdx] || distSq > sectors[sectorIdx].distSq) {
+                    sectors[sectorIdx] = { point: p, distSq: distSq };
+                }
+            });
+
+            const selectedPoints = sectors.filter(s => s !== null).map(s => s.point);
+
+            if (selectedPoints.length < 4 && points.length >= 4) {
+                return simplifyPath(points, 5).slice(0, maxCount);
+            }
+
+            return selectedPoints;
+        }
+
+        function loadAnchorsToPolygonMode(anchorPoints) {
+            setMainMode('draw');
+            setSubMode('polygon');
+            clearPolygonTemp();
+
+            const bounds = L.latLngBounds(anchorPoints);
+            map.fitBounds(bounds, { padding: [50, 50] });
+
+            anchorPoints.forEach(p => {
+                const marker = L.marker(p, { draggable: true }).addTo(map);
+                marker._nodeIndex = -1;
+                activeMarkers.push(marker);
+
+                marker.on('drag', function() { updateActiveLine(true); });
+                marker.on('dragend', function() { updateActiveLine(false); });
+                marker.on('click', function(ev) {
+                    L.DomEvent.stopPropagation(ev);
+                    const mIdx = activeMarkers.indexOf(marker);
+                    L.popup({ offset: [0, -10], closeButton: false })
+                        .setLatLng(marker.getLatLng())
+                        .setContent(`
+                            <div class="text-center p-1">
+                                <p class="text-[10px] font-bold mb-2 text-gray-500">轉折點 ${mIdx + 1}</p>
+                                <button onclick="deleteActiveMarker(${mIdx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
+                            </div>
+                        `).openOn(map);
+                });
+            });
+
+            updateActiveLine(false);
+        }
 
         // ==========================================
         // 路線存檔與 UI 更新
