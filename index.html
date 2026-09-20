@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，支援匯入既有 GPX 提取極端輪廓自動生成網格</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，支援匯入既有 GPX 自動抓取最外圍外框錨點</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -103,7 +103,7 @@
                 <div class="flex items-center gap-2 flex-wrap">
                     <!-- 匯入既有 GPX 區塊 -->
                     <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                        <label class="text-xs font-bold text-gray-600 pl-1">錨點數:</label>
+                        <label class="text-xs font-bold text-gray-600 pl-1">外框錨點數:</label>
                         <input type="number" id="maxAnchorCount" value="20" min="3" max="50" class="w-12 text-center border border-gray-300 rounded text-xs py-1 font-bold outline-none">
                         <label class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-sm">
                             <i class="fas fa-file-import"></i> 匯入 GPX
@@ -132,7 +132,7 @@
             <div id="polygonControls" class="hidden flex-col gap-3 bg-indigo-50 border border-indigo-200 p-4 rounded-xl animate-fade-in">
                 <div class="flex justify-between items-center w-full">
                     <span class="text-sm font-bold text-indigo-800 flex items-center gap-2">
-                        <i class="fas fa-draw-polygon"></i> 多邊形網格 (標記 3 個頂點即可自動生成填滿路線)
+                        <i class="fas fa-draw-polygon"></i> 多邊形網格 (紅點為外邊界，拖曳紅點可調整範圍大小)
                     </span>
                     <button onclick="savePolygonGrid()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
                         ✅ 儲存此網格
@@ -999,7 +999,7 @@
         };
 
         // ==========================================
-        // GPX 匯入與 360 度極值輪廓分析演算法
+        // GPX 匯入與【完整外廓凸包 (Convex Hull)】演算法
         // ==========================================
         function handleGPXUpload(event) {
             const file = event.target.files[0];
@@ -1034,7 +1034,9 @@
             ]).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
 
             const maxPoints = Math.max(3, Math.min(50, parseInt(document.getElementById('maxAnchorCount').value) || 20));
-            const anchorPoints = extractExtremeBoundaryPoints(allPoints, maxPoints);
+            
+            // 採用 Monotone Chain 凸包演算法，精準抓出涵蓋全範圍的最外圈邊界頂點
+            const anchorPoints = extractConvexHullBoundary(allPoints, maxPoints);
 
             if (anchorPoints.length < 3) {
                 alert("無法解析足夠的外廓特徵錨點！");
@@ -1044,36 +1046,94 @@
             loadAnchorsToPolygonMode(anchorPoints);
         }
 
-        function extractExtremeBoundaryPoints(points, maxCount) {
-            let sumLat = 0, sumLng = 0;
-            points.forEach(p => { sumLat += p[0]; sumLng += p[1]; });
-            const cLat = sumLat / points.length;
-            const cLng = sumLng / points.length;
+        // 向量叉積 (判斷轉折方向)
+        function crossProduct(o, a, b) {
+            return (a[1] - o[1]) * (b[0] - o[0]) - (a[0] - o[0]) * (b[1] - o[1]);
+        }
 
-            const sectors = Array.from({ length: maxCount }, () => null);
-            const sectorAngle = (2 * Math.PI) / maxCount;
+        // Monotone Chain 演算法：找出絕對最外圈的凸多邊形頂點
+        function getConvexHull(pts) {
+            let points = [...pts];
+            // 依經緯度排序
+            points.sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
 
-            points.forEach(p => {
-                const dLat = p[0] - cLat;
-                const dLng = (p[1] - cLng) * Math.cos(cLat * Math.PI / 180);
-                let angle = Math.atan2(dLat, dLng);
-                if (angle < 0) angle += 2 * Math.PI;
-
-                const sectorIdx = Math.min(maxCount - 1, Math.floor(angle / sectorAngle));
-                const distSq = dLat * dLat + dLng * dLng;
-
-                if (!sectors[sectorIdx] || distSq > sectors[sectorIdx].distSq) {
-                    sectors[sectorIdx] = { point: p, distSq: distSq };
+            // 去除重複點
+            let uniquePts = [];
+            for (let i = 0; i < points.length; i++) {
+                if (i === 0 || points[i][0] !== points[i-1][0] || points[i][1] !== points[i-1][1]) {
+                    uniquePts.push(points[i]);
                 }
-            });
+            }
+            if (uniquePts.length <= 3) return uniquePts;
 
-            const selectedPoints = sectors.filter(s => s !== null).map(s => s.point);
-
-            if (selectedPoints.length < 4 && points.length >= 4) {
-                return simplifyPath(points, 5).slice(0, maxCount);
+            // 下半部凸包
+            let lower = [];
+            for (let i = 0; i < uniquePts.length; i++) {
+                while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], uniquePts[i]) <= 0) {
+                    lower.pop();
+                }
+                lower.push(uniquePts[i]);
             }
 
-            return selectedPoints;
+            // 上半部凸包
+            let upper = [];
+            for (let i = uniquePts.length - 1; i >= 0; i--) {
+                while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], uniquePts[i]) <= 0) {
+                    upper.pop();
+                }
+                upper.push(uniquePts[i]);
+            }
+
+            lower.pop();
+            upper.pop();
+            return lower.concat(upper);
+        }
+
+        // 沿著最外圍一整圈等距取樣出指定數量 (例如至多 20 點)
+        function extractConvexHullBoundary(points, maxCount) {
+            const hull = getConvexHull(points);
+
+            // 若外廓總頂點數小於等於設定值，全部保留即可完美描摹
+            if (hull.length <= maxCount) {
+                return hull;
+            }
+
+            // 若外邊界點超過 maxCount，沿周長進行等距均勻抽樣，保留完整輪廓不變形
+            let totalPerimeter = 0;
+            let dists = [];
+            for (let i = 0; i < hull.length; i++) {
+                let next = hull[(i + 1) % hull.length];
+                let d = L.latLng(hull[i][0], hull[i][1]).distanceTo(L.latLng(next[0], next[1]));
+                dists.push(d);
+                totalPerimeter += d;
+            }
+
+            const step = totalPerimeter / maxCount;
+            let sampled = [];
+            let currentDist = 0;
+            let targetDist = 0;
+            let edgeIndex = 0;
+
+            for (let i = 0; i < maxCount; i++) {
+                while (currentDist + dists[edgeIndex] < targetDist && edgeIndex < hull.length - 1) {
+                    currentDist += dists[edgeIndex];
+                    edgeIndex++;
+                }
+
+                let p1 = hull[edgeIndex];
+                let p2 = hull[(edgeIndex + 1) % hull.length];
+                let segmentLen = dists[edgeIndex];
+                let remain = targetDist - currentDist;
+                let ratio = segmentLen > 0 ? (remain / segmentLen) : 0;
+
+                let lat = p1[0] + (p2[0] - p1[0]) * ratio;
+                let lng = p1[1] + (p2[1] - p1[1]) * ratio;
+                sampled.push([lat, lng]);
+
+                targetDist += step;
+            }
+
+            return sampled;
         }
 
         function loadAnchorsToPolygonMode(anchorPoints) {
