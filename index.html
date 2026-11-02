@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>自訂 GPX 路線產生器</title>
+    <title>自訂 GPX 路線產生器 - 智慧道路導航版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -45,7 +45,7 @@
                 <h1 class="text-2xl font-bold flex items-center gap-3">
                     <i class="fas fa-route"></i> 自訂 GPX 路線產生器
                 </h1>
-                <p class="mt-1 opacity-80 text-xs">支援自由手繪、節點連線、幾何圖形填滿，支援匯入既有 GPX 自動抓取最外圍外框錨點</p>
+                <p class="mt-1 opacity-80 text-xs">支援自由手繪、幾何填滿、凸包解析，以及【沿真實道路智慧貼齊走線】</p>
             </div>
             <div class="text-right">
                 <div class="text-xs opacity-70">總累積距離</div>
@@ -85,23 +85,26 @@
                     </div>
 
                     <div id="draw-sub-modes" class="hidden flex bg-indigo-50 p-1 rounded-lg border border-indigo-100 flex-wrap gap-1">
-                        <button id="submode-freehand" onclick="setSubMode('freehand')" class="px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all">
+                        <!-- 新增智慧道路貼齊模式 -->
+                        <button id="submode-road" onclick="setSubMode('road')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all flex items-center gap-1">
+                            <i class="fas fa-road"></i> 智慧道路導航
+                        </button>
+                        <button id="submode-freehand" onclick="setSubMode('freehand')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
                             自由手繪
                         </button>
                         <button id="submode-click" onclick="setSubMode('click')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
-                            點擊連線
+                            直線點擊
                         </button>
                         <button id="submode-polygon" onclick="setSubMode('polygon')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all">
-                            <i class="fas fa-border-all"></i> 自訂多邊形網格
+                            <i class="fas fa-border-all"></i> 多邊形網格
                         </button>
                         <button id="submode-shape" onclick="setSubMode('shape')" class="px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all border-l border-indigo-200">
-                            <i class="fas fa-shapes"></i> 幾何形狀產生
+                            <i class="fas fa-shapes"></i> 幾何形狀
                         </button>
                     </div>
                 </div>
 
                 <div class="flex items-center gap-2 flex-wrap">
-                    <!-- 匯入既有 GPX 區塊 -->
                     <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
                         <label class="text-xs font-bold text-gray-600 pl-1">外框錨點數:</label>
                         <input type="number" id="maxAnchorCount" value="20" min="3" max="50" class="w-12 text-center border border-gray-300 rounded text-xs py-1 font-bold outline-none">
@@ -120,9 +123,28 @@
                 </div>
             </div>
 
+            <!-- 智慧道路控制面板 -->
+            <div id="roadControls" class="hidden bg-blue-50 border border-blue-200 p-3 rounded-xl justify-between items-center animate-fade-in flex-wrap gap-2">
+                <div class="flex items-center gap-3">
+                    <span class="text-sm font-bold text-blue-900 flex items-center gap-1.5">
+                        <i class="fas fa-map-signs"></i> 點擊地圖標記起終點，將自動沿馬路計算真實路徑
+                    </span>
+                    <select id="routingProfile" onchange="recalculateRoadRoute()" class="bg-white border border-blue-300 rounded px-2 py-1 text-xs font-bold text-blue-800 outline-none">
+                        <option value="foot">🚶 步行走線 (人行道/小徑優先)</option>
+                        <option value="driving">🚗 駕車走線 (遵循車道/單行道)</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="routingLoading" class="text-xs font-bold text-blue-600 hidden"><i class="fas fa-spinner fa-spin"></i> 路網計算中...</span>
+                    <button onclick="finishRoadStroke()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                        ✅ 儲存此段道路路線
+                    </button>
+                </div>
+            </div>
+
             <div id="clickControls" class="hidden bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex justify-between items-center animate-fade-in">
                 <span class="text-sm font-bold text-emerald-800">
-                    <i class="fas fa-info-circle"></i> 點擊連線中：可自由拖曳紅點、單擊紅點可刪除該轉折。
+                    <i class="fas fa-info-circle"></i> 直線連線中：可自由拖曳紅點、單擊紅點可刪除該轉折。
                 </span>
                 <button onclick="finishClickStroke()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md transition-colors">
                     ✅ 儲存此段路線
@@ -279,13 +301,18 @@
         var searchMarkers = []; 
 
         var mainMode = 'move';
-        var subMode = 'freehand';
+        var subMode = 'road';
 
         var activeMarkers = [];
         var clickPolyline = null;
         var polygonLayer = null; 
         var polygonGridPolyline = null;
         var tempGridPoints = [];
+
+        // 道路導航相關變數
+        var roadPolyline = null;
+        var roadWaypoints = [];
+        var tempRoadPoints = [];
 
         // 幾何形狀變數
         var shapeCenter = null;
@@ -299,6 +326,7 @@
         function setMainMode(newMode) {
             if (mainMode === 'draw') {
                 if (subMode === 'click' && activeMarkers.length > 0) finishClickStroke();
+                if (subMode === 'road' && roadWaypoints.length > 0) finishRoadStroke();
                 if (subMode === 'polygon') clearPolygonTemp();
                 if (subMode === 'shape') clearShapeTemp();
             }
@@ -316,6 +344,7 @@
                 document.getElementById('mode-draw-main').className = inactiveMain;
                 document.getElementById('draw-sub-modes').classList.add('hidden');
                 document.getElementById('clickControls').classList.add('hidden');
+                document.getElementById('roadControls').classList.add('hidden');
                 document.getElementById('polygonControls').classList.add('hidden');
                 document.getElementById('shapeControls').classList.add('hidden');
                 
@@ -340,6 +369,13 @@
             tempGridPoints = [];
         }
 
+        function clearRoadTemp() {
+            roadWaypoints.forEach(m => map.removeLayer(m));
+            roadWaypoints = [];
+            if (roadPolyline) { map.removeLayer(roadPolyline); roadPolyline = null; }
+            tempRoadPoints = [];
+        }
+
         function clearShapeTemp() {
             if (shapeCenterMarker) { map.removeLayer(shapeCenterMarker); shapeCenterMarker = null; }
             if (shapeRadiusMarker) { map.removeLayer(shapeRadiusMarker); shapeRadiusMarker = null; }
@@ -354,6 +390,9 @@
                 if (subMode === 'click') finishClickStroke();
                 if (subMode === 'polygon') clearPolygonTemp();
             }
+            if (subMode === 'road' && newSubMode !== 'road') {
+                if (roadWaypoints.length > 0) finishRoadStroke();
+            }
             if (subMode === 'shape' && newSubMode !== 'shape') {
                 clearShapeTemp();
             }
@@ -363,16 +402,23 @@
             const activeSub = "px-3 py-1.5 text-xs font-bold rounded bg-indigo-500 text-white shadow-sm transition-all";
             const inactiveSub = "px-3 py-1.5 text-xs font-bold rounded text-indigo-600 hover:bg-indigo-100 transition-all";
 
-            ['freehand', 'click', 'polygon', 'shape'].forEach(m => {
+            ['road', 'freehand', 'click', 'polygon', 'shape'].forEach(m => {
                 const el = document.getElementById('submode-' + m);
                 if (el) el.className = (m === subMode) ? activeSub : inactiveSub;
             });
 
+            document.getElementById('roadControls').classList.add('hidden');
             document.getElementById('clickControls').classList.add('hidden');
             document.getElementById('polygonControls').classList.add('hidden');
             document.getElementById('shapeControls').classList.add('hidden');
 
-            if (subMode === 'freehand') {
+            if (subMode === 'road') {
+                document.getElementById('roadControls').classList.remove('hidden');
+                document.getElementById('roadControls').style.display = 'flex';
+                map.dragging.enable();
+                map.doubleClickZoom.disable();
+                document.getElementById('map').classList.add('cursor-draw');
+            } else if (subMode === 'freehand') {
                 map.dragging.disable();
                 map.doubleClickZoom.enable();
                 document.getElementById('map').classList.add('cursor-draw');
@@ -395,6 +441,86 @@
                 document.getElementById('map').classList.add('cursor-draw');
             }
         }
+
+        // ==========================================
+        // OSRM 智慧道路導航演算核心
+        // ==========================================
+        async function recalculateRoadRoute() {
+            if (roadWaypoints.length < 2) {
+                if (roadPolyline) { map.removeLayer(roadPolyline); roadPolyline = null; }
+                tempRoadPoints = [];
+                return;
+            }
+
+            const loadingEl = document.getElementById('routingLoading');
+            loadingEl.classList.remove('hidden');
+
+            const profile = document.getElementById('routingProfile').value; // foot or driving
+            // OSRM 格式: lng,lat;lng,lat
+            const coordsParam = roadWaypoints.map(m => {
+                const ll = m.getLatLng();
+                return `${ll.lng},${ll.lat}`;
+            }).join(';');
+
+            const url = `https://router.project-osrm.org/route/v1/${profile}/${coordsParam}?overview=full&geometries=geojson`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                    // GeoJSON 格式為 [lng, lat]，需反轉為 Leaflet 的 [lat, lng]
+                    const routePts = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                    tempRoadPoints = routePts;
+
+                    if (!roadPolyline) {
+                        roadPolyline = L.polyline(routePts, { color: '#2563eb', weight: 5, opacity: 0.85 }).addTo(map);
+                    } else {
+                        roadPolyline.setLatLngs(routePts);
+                    }
+                } else {
+                    alert("路網規劃失敗，可能該區域兩點間無可通行的路網。");
+                }
+            } catch (err) {
+                console.error("OSRM 請求失敗:", err);
+                alert("無法連線至 OSRM 開放導航服務，請確認網路連線。");
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
+        }
+
+        function updateRoadWaypointsUI() {
+            roadWaypoints.forEach((m, idx) => {
+                const isStart = idx === 0;
+                const isEnd = idx === roadWaypoints.length - 1 && roadWaypoints.length > 1;
+                let bgCol = "bg-blue-600";
+                let text = `${idx + 1}`;
+                if (isStart) { bgCol = "bg-emerald-600"; text = "起"; }
+                else if (isEnd) { bgCol = "bg-rose-600"; text = "訖"; }
+
+                const icon = L.divIcon({
+                    className: 'road-node-icon',
+                    html: `<div class='${bgCol} text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform'>${text}</div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                m.setIcon(icon);
+            });
+        }
+
+        window.finishRoadStroke = function() {
+            if (mainMode !== 'draw' || subMode !== 'road' || tempRoadPoints.length === 0) return;
+
+            currentStrokePoints = tempRoadPoints;
+            currentPolyline = roadPolyline;
+
+            roadPolyline = null;
+            tempRoadPoints = [];
+            roadWaypoints.forEach(m => map.removeLayer(m));
+            roadWaypoints = [];
+
+            saveStrokeToHistory(false);
+        };
 
         function handleSearchEnter(e) {
             if (e.key === 'Enter') searchCoordinate();
@@ -544,7 +670,28 @@
         map.on('click', function(e) {
             if (mainMode !== 'draw') return;
             
-            if (subMode === 'click' || subMode === 'polygon') {
+            // 智慧道路模式
+            if (subMode === 'road') {
+                const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+                roadWaypoints.push(marker);
+
+                marker.on('dragend', function() { recalculateRoadRoute(); });
+                marker.on('click', function(ev) {
+                    L.DomEvent.stopPropagation(ev);
+                    const idx = roadWaypoints.indexOf(marker);
+                    L.popup({ offset: [0, -10], closeButton: false })
+                        .setLatLng(marker.getLatLng())
+                        .setContent(`
+                            <div class="text-center p-1">
+                                <p class="text-[10px] font-bold mb-2 text-gray-500">道路節點 ${idx + 1}</p>
+                                <button onclick="deleteRoadMarker(${idx})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow transition-colors">🗑️ 刪除此點</button>
+                            </div>
+                        `).openOn(map);
+                });
+
+                updateRoadWaypointsUI();
+                recalculateRoadRoute();
+            } else if (subMode === 'click' || subMode === 'polygon') {
                 const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
                 marker._nodeIndex = -1; 
                 activeMarkers.push(marker);
@@ -571,6 +718,16 @@
                 initOrMoveShape(e.latlng);
             }
         });
+
+        window.deleteRoadMarker = function(idx) {
+            if (roadWaypoints[idx]) {
+                map.removeLayer(roadWaypoints[idx]);
+                roadWaypoints.splice(idx, 1);
+                map.closePopup();
+                updateRoadWaypointsUI();
+                recalculateRoadRoute();
+            }
+        };
 
         window.finishClickStroke = function() {
             if (mainMode !== 'draw' || subMode !== 'click' || activeMarkers.length === 0) return;
@@ -1034,8 +1191,6 @@
             ]).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
 
             const maxPoints = Math.max(3, Math.min(50, parseInt(document.getElementById('maxAnchorCount').value) || 20));
-            
-            // 採用 Monotone Chain 凸包演算法，精準抓出涵蓋全範圍的最外圈邊界頂點
             const anchorPoints = extractConvexHullBoundary(allPoints, maxPoints);
 
             if (anchorPoints.length < 3) {
@@ -1046,18 +1201,14 @@
             loadAnchorsToPolygonMode(anchorPoints);
         }
 
-        // 向量叉積 (判斷轉折方向)
         function crossProduct(o, a, b) {
             return (a[1] - o[1]) * (b[0] - o[0]) - (a[0] - o[0]) * (b[1] - o[1]);
         }
 
-        // Monotone Chain 演算法：找出絕對最外圈的凸多邊形頂點
         function getConvexHull(pts) {
             let points = [...pts];
-            // 依經緯度排序
             points.sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
 
-            // 去除重複點
             let uniquePts = [];
             for (let i = 0; i < points.length; i++) {
                 if (i === 0 || points[i][0] !== points[i-1][0] || points[i][1] !== points[i-1][1]) {
@@ -1066,7 +1217,6 @@
             }
             if (uniquePts.length <= 3) return uniquePts;
 
-            // 下半部凸包
             let lower = [];
             for (let i = 0; i < uniquePts.length; i++) {
                 while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], uniquePts[i]) <= 0) {
@@ -1075,7 +1225,6 @@
                 lower.push(uniquePts[i]);
             }
 
-            // 上半部凸包
             let upper = [];
             for (let i = uniquePts.length - 1; i >= 0; i--) {
                 while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], uniquePts[i]) <= 0) {
@@ -1089,16 +1238,13 @@
             return lower.concat(upper);
         }
 
-        // 沿著最外圍一整圈等距取樣出指定數量 (例如至多 20 點)
         function extractConvexHullBoundary(points, maxCount) {
             const hull = getConvexHull(points);
 
-            // 若外廓總頂點數小於等於設定值，全部保留即可完美描摹
             if (hull.length <= maxCount) {
                 return hull;
             }
 
-            // 若外邊界點超過 maxCount，沿周長進行等距均勻抽樣，保留完整輪廓不變形
             let totalPerimeter = 0;
             let dists = [];
             for (let i = 0; i < hull.length; i++) {
@@ -1234,6 +1380,7 @@
                 
                 if (mainMode === 'draw') {
                     if (subMode === 'click' && activeMarkers.length > 0) finishClickStroke();
+                    if (subMode === 'road' && roadWaypoints.length > 0) finishRoadStroke();
                     if (subMode === 'polygon') clearPolygonTemp();
                     if (subMode === 'shape') clearShapeTemp();
                 }
@@ -1311,6 +1458,13 @@
         }
 
         window.undoLastStroke = function() {
+            if (mainMode === 'draw' && subMode === 'road' && roadWaypoints.length > 0) {
+                const m = roadWaypoints.pop();
+                map.removeLayer(m);
+                updateRoadWaypointsUI();
+                recalculateRoadRoute();
+                return;
+            }
             if (mainMode === 'draw' && (subMode === 'click' || subMode === 'polygon') && activeMarkers.length > 0) {
                 const m = activeMarkers.pop();
                 map.removeLayer(m);
@@ -1338,6 +1492,7 @@
             allStrokes.forEach(stroke => map.removeLayer(stroke.polyline));
             allStrokes = [];
             clearPolygonTemp();
+            clearRoadTemp();
             clearShapeTemp();
             if (clickPolyline) { map.removeLayer(clickPolyline); clickPolyline = null; }
             if (currentPolyline) { map.removeLayer(currentPolyline); currentPolyline = null; }
